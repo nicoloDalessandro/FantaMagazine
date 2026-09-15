@@ -1,0 +1,509 @@
+"""Le operazioni del progetto, indipendenti da chi le usa.
+
+La riga di comando e l'interfaccia web fanno le stesse cose — elencare le leghe,
+generare la prima pagina e la sua immagine, rinnovare i token, svuotare la
+cache — ma le
+presentano in modo diverso. Qui vive la logica una volta sola: niente stampe,
+niente codici di uscita, niente HTML. Chi chiama riceve dati oppure un
+`ErroreServizio` con un codice stabile, e decide lui come mostrarlo.
+"""
+
+from __future__ import annotations
+
+import json
+import random
+import re
+import secrets
+import shutil
+from dataclasses import asdict, dataclass, field
+from datetime import date, datetime
+from pathlib import Path
+from typing import Callable
+
+import requests
+
+from . import analysis, api, auth, browser, config, gemini, prompt, resoconto, storico, tendenze
+
+MESI = (
+    "gennaio febbraio marzo aprile maggio giugno luglio "
+    "agosto settembre ottobre novembre dicembre"
+).split()
+
+Log = Callable[[str], None]
+
+
+class ErroreServizio(Exception):
+    """Un problema che l'utente può capire e, di solito, risolvere.
+
+    `codice` è stabile e pensato per le macchine: l'interfaccia web lo usa per
+    decidere cosa proporre (per esempio il pulsante di rinnovo dei token).
+    `uscita` è il codice di uscita della riga di comando: 2 per i problemi di
+    autenticazione (compresa una lega senza token), 1 per tutto il resto, come
+    prima dell'estrazione.
+    """
+
+    STATI_HTTP = {
+        "token_mancante": 401,
+        "token_scaduto": 401,
+        "lega_sconosciuta": 404,
+        "competizione_sconosciuta": 404,
+        "giornata_non_disponibile": 404,
+        "nessuna_competizione": 409,
+        "nessuna_giornata": 409,
+        "formato_non_supportato": 422,
+        "browser": 503,
+        "api": 502,
+        "rete": 503,
+        "immagine_inesistente": 404,
+        "gemini_chiave_mancante": 412,
+        "gemini_chiave_non_valida": 401,
+        "gemini_permesso": 403,
+        "gemini_quota": 429,
+        "gemini_modello_non_disponibile": 404,
+        "gemini_bloccata": 422,
+        "gemini_nessuna_immagine": 502,
+        "gemini_richiesta_non_valida": 400,
+        "gemini_tempo_scaduto": 504,
+        "gemini_rete": 503,
+        "gemini_servizio": 502,
+    }
+
+    def __init__(self, messaggio: str, codice: str) -> None:
+        super().__init__(messaggio)
+        self.messaggio = messaggio
+        self.codice = codice
+
+    @property
+    def stato_http(self) -> int:
+        return self.STATI_HTTP.get(self.codice, 400)
+
+    @property
+    def uscita(self) -> int:
+        return 2 if self.codice.startswith("token") or self.codice == "lega_sconosciuta" else 1
+
+
+# --- Date ---------------------------------------------------------------------
+def stagione(oggi: date) -> str:
+    inizio = oggi.year if oggi.month >= 7 else oggi.year - 1
+    return f"{inizio}-{str(inizio + 1)[-2:]}"
+
+
+def data_estesa(oggi: date) -> str:
+    return f"{oggi.day} {MESI[oggi.month - 1]} {oggi.year}"
+
+
+# --- Traduzione degli errori ----------------------------------------------------
+def _traduci(errore: Exception) -> ErroreServizio:
+    if isinstance(errore, ErroreServizio):
+        return errore
+    if isinstance(errore, api.TokenScaduto):
+        return ErroreServizio(
+            "Il token è scaduto o appartiene a un'altra lega: va rinnovato.",
+            "token_scaduto",
+        )
+    if isinstance(errore, api.ApiError):
+        return ErroreServizio(f"L'API di Leghe Fantacalcio ha risposto male: {errore}", "api")
+    if isinstance(errore, requests.RequestException):
+        return ErroreServizio(
+            "Leghe Fantacalcio non è raggiungibile. Controlla la connessione e riprova.",
+            "rete",
+        )
+    if isinstance(errore, auth.TokenMancante):
+        return ErroreServizio(
+            "Nessun token salvato: fai l'accesso su leghe.fantacalcio.it in Chrome e "
+            "rinnova i token.",
+            "token_mancante",
+        )
+    raise errore
+
+
+def _lega(alias: str) -> auth.Lega:
+    try:
+        leghe = auth.carica_leghe()
+    except auth.TokenMancante as errore:
+        raise _traduci(errore) from errore
+    if not leghe:
+        raise _traduci(auth.TokenMancante())
+    if alias not in leghe:
+        raise ErroreServizio(
+            f"Nessun token per la lega «{alias}». Se ne fai parte, rinnova i token.",
+            "lega_sconosciuta",
+        )
+    return leghe[alias]
+
+
+def competizioni(alias: str) -> list[tuple[str, str]]:
+    """(id, nome) delle competizioni di una lega, senza scaricarne i calendari."""
+    lega = _lega(alias)
+    try:
+        trovate = api.competizioni_disponibili(api.Client(lega.token))
+    except (api.ApiError, requests.RequestException) as errore:
+        raise _traduci(errore) from errore
+    if not trovate:
+        raise ErroreServizio(f"{lega.nome} non ha competizioni.", "nessuna_competizione")
+    return trovate
+
+
+# --- Elenco delle leghe ---------------------------------------------------------
+@dataclass
+class StatoCompetizione:
+    id: str
+    nome: str
+    giornate_totali: int = 0
+    giornate_calcolate: list[int] = field(default_factory=list)
+    supportata: bool | None = None
+    errore: str | None = None
+
+    @property
+    def ultima(self) -> int | None:
+        return max(self.giornate_calcolate) if self.giornate_calcolate else None
+
+
+@dataclass
+class StatoLega:
+    alias: str
+    nome: str
+    testata: str
+    competizioni: list[StatoCompetizione] = field(default_factory=list)
+    errore: str | None = None
+    codice_errore: str | None = None
+
+
+def stato_leghe() -> list[StatoLega]:
+    """Tutte le leghe con token, con competizioni e giornate già disputate.
+
+    Un problema su una singola lega non ferma l'elenco: resta annotato sulla
+    lega, così le altre restano utilizzabili.
+    """
+    try:
+        leghe = auth.carica_leghe()
+    except auth.TokenMancante as errore:
+        raise _traduci(errore) from errore
+    if not leghe:
+        raise _traduci(auth.TokenMancante())
+
+    risultato: list[StatoLega] = []
+    for alias, lega in sorted(leghe.items()):
+        stato = StatoLega(alias=alias, nome=lega.nome, testata=config.testata(alias, lega.nome))
+        try:
+            client = api.Client(lega.token)
+            for identificativo, nome in api.competizioni_disponibili(client):
+                voce = StatoCompetizione(id=identificativo, nome=nome)
+                try:
+                    calendario = client.calendario(identificativo)
+                    disputate = analysis.giornate_calcolate(calendario)
+                    voce.giornate_totali = len(calendario)
+                    voce.giornate_calcolate = sorted(g["matchDay"] for g in disputate)
+                    if disputate:
+                        ultima = max(disputate, key=lambda g: g["matchDay"])
+                        voce.supportata = analysis.scontri_diretti(ultima)
+                except api.TokenScaduto:
+                    raise
+                except (api.ApiError, requests.RequestException) as errore:
+                    voce.errore = _traduci(errore).messaggio
+                stato.competizioni.append(voce)
+        except (api.ApiError, requests.RequestException) as errore:
+            tradotto = _traduci(errore)
+            stato.errore = tradotto.messaggio
+            stato.codice_errore = tradotto.codice
+        risultato.append(stato)
+    return risultato
+
+
+# --- Generazione ------------------------------------------------------------------
+@dataclass
+class Risultato:
+    prompt: str
+    pagina: prompt.PrimaPagina
+    lega: str
+    nome_lega: str
+    competizione: str
+    nome_competizione: str
+    avvisi: list[str] = field(default_factory=list)
+    # Che cosa ricorda la memoria e che cosa ne è finito in questa pagina.
+    memoria: resoconto.Resoconto | None = None
+
+
+def genera(
+    alias: str,
+    competizione: str,
+    giornata: int | None = None,
+    seme: int | None = None,
+    varia: bool = False,
+    usa_cache: bool = True,
+    oggi: date | None = None,
+    su_log: Log | None = None,
+) -> Risultato:
+    """Genera la prima pagina di una giornata. Solleva ErroreServizio.
+
+    Senza `giornata` si usa l'ultima disputata. `seme` fissa le formule; con
+    `varia` se ne sceglie uno a caso. Senza nessuno dei due il testo dipende
+    solo dalla giornata, quindi rigenerarla dà lo stesso prompt.
+    """
+    log = su_log or (lambda _messaggio: None)
+    avvisi: list[str] = []
+    lega = _lega(alias)
+    competizione = str(competizione)
+
+    try:
+        client = api.Client(lega.token)
+        nomi_competizioni = dict(api.competizioni_disponibili(client))
+        if not nomi_competizioni:
+            raise ErroreServizio(f"{lega.nome} non ha competizioni.", "nessuna_competizione")
+        if competizione not in nomi_competizioni:
+            raise ErroreServizio(
+                f"La competizione {competizione} non appartiene a {lega.nome}.",
+                "competizione_sconosciuta",
+            )
+        nome_competizione = nomi_competizioni[competizione]
+
+        calendario = client.calendario(competizione)
+        log(f"competizione {competizione}, {len(calendario)} giornate in calendario")
+
+        disputate = analysis.giornate_calcolate(calendario)
+        if not disputate:
+            raise ErroreServizio(
+                f"{lega.nome}: nessuna giornata ancora calcolata in «{nome_competizione}». "
+                f"Il calendario esiste ({len(calendario)} giornate) ma non si è giocato, "
+                f"oppure i punteggi non sono stati elaborati.",
+                "nessuna_giornata",
+            )
+
+        if not analysis.scontri_diretti(max(disputate, key=lambda g: g["matchDay"])):
+            raise ErroreServizio(
+                f"«{nome_competizione}» non usa scontri diretti: nella stessa giornata "
+                "ogni squadra affronta tutte le altre (formato Royale o simile). "
+                "Classifica e commenti assumono partite a coppie, quindi produrrebbero "
+                "numeri privi di senso. Scegli un Fanta Campionato.",
+                "formato_non_supportato",
+            )
+
+        if giornata is not None:
+            scelte = [g for g in disputate if g["matchDay"] == int(giornata)]
+            if not scelte:
+                raise ErroreServizio(
+                    f"La giornata {giornata} non esiste o non è ancora calcolata.",
+                    "giornata_non_disponibile",
+                )
+            bersaglio = scelte[0]
+        else:
+            bersaglio = analysis.ultima_giornata(calendario)
+
+        nomi_squadre = {s["id"]: s["n"].strip() for s in client.squadre()}
+        nomi_giocatori = {g["id"]: (g["name"], g.get("stnme", "")) for g in client.giocatori()}
+        log(f"{len(nomi_squadre)} squadre, {len(nomi_giocatori)} giocatori")
+
+        # Lo storico si ferma alla giornata analizzata: una giornata passata
+        # produce il commento che si sarebbe letto quel giorno, non uno che
+        # conosce il futuro.
+        fino_a = bersaglio["matchDay"]
+        calendario_fino_a = [g for g in calendario if g["matchDay"] <= fino_a]
+
+        def avvisa(messaggio: str) -> None:
+            avvisi.append(messaggio)
+            log(f"  ATTENZIONE: {messaggio}")
+
+        completo = storico.carica_storico(
+            client,
+            competizione,
+            calendario_fino_a,
+            nomi_squadre,
+            nomi_giocatori,
+            usa_cache=usa_cache,
+            su_avviso=avvisa,
+            su_progresso=lambda n: log(f"  giornata {n}"),
+        )
+    except ErroreServizio:
+        raise
+    except (api.ApiError, requests.RequestException, auth.TokenMancante) as errore:
+        raise _traduci(errore) from errore
+
+    memoria = tendenze.calcola(completo)
+    log(f"memoria: {memoria.giornate} giornate, {len(memoria.giocatori)} giocatori tracciati")
+    if memoria.abbastanza_storia:
+        for squadra in memoria.in_crisi()[:3]:
+            log(f"  crisi: {squadra.nome} ({squadra.striscia_sconfitte} sconfitte)")
+        for giocatore in memoria.in_striscia_gol()[:3]:
+            log(f"  in gol: {giocatore.nome} ({giocatore.striscia_gol} presenze)")
+    else:
+        log("  storia insufficiente per le strisce: servono almeno 2 giornate")
+
+    tabella = analysis.classifica(calendario_fino_a, nomi_squadre)
+    oggi = oggi or date.today()
+    testata = config.testata(lega.alias, lega.nome)
+    log(f"testata: {testata}")
+
+    # Per difetto il testo è stabile: la stessa giornata dà sempre lo stesso
+    # prompt. `varia` rompe di proposito questa stabilità quando si vogliono
+    # più versioni fra cui scegliere.
+    if seme is None and varia:
+        seme = random.randrange(10_000)
+    if seme is not None:
+        log(f"seme: {seme}")
+
+    pagina = prompt.componi(
+        partite=completo[fino_a],
+        tabella=tabella,
+        giornata=fino_a,
+        stagione=stagione(oggi),
+        data=data_estesa(oggi),
+        testata=testata,
+        memoria=memoria,
+        seme=seme,
+    )
+    return Risultato(
+        prompt=prompt.renderizza(pagina),
+        pagina=pagina,
+        lega=lega.alias,
+        nome_lega=lega.nome,
+        competizione=competizione,
+        nome_competizione=nome_competizione,
+        avvisi=avvisi,
+        memoria=resoconto.componi(memoria, pagina),
+    )
+
+
+# --- Manutenzione -----------------------------------------------------------------
+def rinnova_token() -> list[dict]:
+    """Rilegge i token dal browser e li salva. Restituisce alias e nomi, mai i token."""
+    try:
+        leghe = browser.leggi_leghe()
+    except browser.ErroreBrowser as errore:
+        raise ErroreServizio(str(errore), "browser") from errore
+    auth.salva_leghe(leghe)
+    return [{"alias": v["alias"], "nome": v["nome"]} for v in sorted(leghe, key=lambda v: v["alias"])]
+
+
+def svuota_cache() -> int:
+    return storico.svuota_cache()
+
+
+# --- Immagini con Gemini ----------------------------------------------------------
+_ID_BOZZA = re.compile(r"[0-9a-f]{32}")
+_SLUG = re.compile(r"[^a-z0-9-]+")
+
+
+@dataclass
+class Bozza:
+    """Un'immagine generata, conservata anche se nessuno la salva.
+
+    Ogni immagine costa: una bozza non salvata resta comunque in
+    `.cache/immagini`, così un clic mancato non fa perdere quanto già pagato.
+    """
+
+    id: str
+    percorso: Path
+    mime: str
+    nome_file: str
+    modello: str
+    proporzioni: str
+    dimensione: str
+    secondi: float
+    costo_stimato: float
+    commento: str = ""
+    salvata: str | None = None
+
+
+def stato_gemini() -> dict:
+    """Ciò che serve all'interfaccia per proporre la generazione. Mai la chiave."""
+    return {
+        "disponibile": gemini.chiave_presente(),
+        "modello": gemini.MODELLO_PREDEFINITO,
+        "proporzioni": gemini.PROPORZIONI,
+        "dimensioni": list(gemini.DIMENSIONI),
+        "dimensione_predefinita": gemini.DIMENSIONE_PREDEFINITA,
+        "costi": gemini.COSTO_STIMATO,
+    }
+
+
+def _nome_file(lega: str, giornata: int | None, seme: int | None, estensione: str) -> str:
+    """fantatana_giornata-03_seme-3_2026-09-15_21-34-05.png
+
+    Il seme nel nome permette di rigenerare esattamente la stessa pagina.
+    """
+    pulito = _SLUG.sub("-", (lega or "lega").lower()).strip("-") or "lega"
+    parti = [pulito]
+    if giornata is not None:
+        parti.append(f"giornata-{int(giornata):02d}")
+    if seme is not None:
+        parti.append(f"seme-{int(seme)}")
+    parti.append(datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
+    return "_".join(parti) + f".{estensione}"
+
+
+def _meta(bozza_id: str) -> Path:
+    return config.BOZZE_DIR / f"{bozza_id}.json"
+
+
+def genera_immagine(
+    prompt_testo: str,
+    lega: str = "",
+    giornata: int | None = None,
+    seme: int | None = None,
+    dimensione: str = gemini.DIMENSIONE_PREDEFINITA,
+) -> Bozza:
+    """Manda il prompt a Gemini e conserva l'immagine come bozza."""
+    if len(prompt_testo) > 30_000:
+        raise ErroreServizio("Il prompt è troppo lungo per essere inviato.", "gemini_richiesta_non_valida")
+    try:
+        immagine = gemini.genera(prompt_testo, dimensione=dimensione)
+    except gemini.ErroreGemini as errore:
+        raise ErroreServizio(errore.messaggio, f"gemini_{errore.codice}") from errore
+
+    config.BOZZE_DIR.mkdir(parents=True, exist_ok=True)
+    bozza_id = secrets.token_hex(16)
+    percorso = config.BOZZE_DIR / f"{bozza_id}.{immagine.estensione}"
+    percorso.write_bytes(immagine.dati)
+
+    bozza = Bozza(
+        id=bozza_id,
+        percorso=percorso,
+        mime=immagine.mime,
+        nome_file=_nome_file(lega, giornata, seme, immagine.estensione),
+        modello=immagine.modello,
+        proporzioni=immagine.proporzioni,
+        dimensione=immagine.dimensione,
+        secondi=immagine.secondi,
+        costo_stimato=gemini.COSTO_STIMATO.get(immagine.dimensione, 0.0),
+        commento=immagine.commento,
+    )
+    _meta(bozza_id).write_text(
+        json.dumps({**asdict(bozza), "percorso": percorso.name}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return bozza
+
+
+def bozza(bozza_id: str) -> Bozza:
+    """Recupera una bozza. L'id deve avere il formato generato qui: niente percorsi."""
+    if not _ID_BOZZA.fullmatch(bozza_id or ""):
+        raise ErroreServizio("Immagine inesistente.", "immagine_inesistente")
+    meta = _meta(bozza_id)
+    if not meta.exists():
+        raise ErroreServizio("Immagine inesistente.", "immagine_inesistente")
+    dati = json.loads(meta.read_text(encoding="utf-8"))
+    percorso = config.BOZZE_DIR / Path(dati["percorso"]).name
+    if not percorso.exists():
+        raise ErroreServizio("Il file dell'immagine non c'è più.", "immagine_inesistente")
+    return Bozza(**{**dati, "percorso": percorso})
+
+
+def salva_immagine(bozza_id: str) -> Path:
+    """Copia la bozza nell'archivio delle prime pagine. Salvare due volte non duplica."""
+    scelta = bozza(bozza_id)
+    if scelta.salvata and Path(scelta.salvata).exists():
+        return Path(scelta.salvata)
+
+    config.ARCHIVIO_DIR.mkdir(parents=True, exist_ok=True)
+    destinazione = config.ARCHIVIO_DIR / scelta.nome_file
+    numero = 2
+    while destinazione.exists():
+        destinazione = config.ARCHIVIO_DIR / f"{Path(scelta.nome_file).stem}-{numero}{Path(scelta.nome_file).suffix}"
+        numero += 1
+    shutil.copyfile(scelta.percorso, destinazione)
+
+    meta = _meta(bozza_id)
+    dati = json.loads(meta.read_text(encoding="utf-8"))
+    dati["salvata"] = str(destinazione)
+    meta.write_text(json.dumps(dati, ensure_ascii=False, indent=2), encoding="utf-8")
+    return destinazione

@@ -1,0 +1,1191 @@
+/* Redazione — foglio di stile.
+ *
+ * L'app è un attrezzo da scrivania, quindi la cornice resta sobria: la parte
+ * che deve farsi notare è l'anteprima, stampata sul rosa della Gazzetta.
+ * Nessun font esterno: l'app è locale, deve funzionare offline e non ha
+ * motivo di chiamare server altrui a ogni apertura. Georgia è un carattere da
+ * giornale vero ed è presente su Windows.
+ */
+
+:root {
+  --fondo: #f2edea;
+  --pannello: #fcfaf8;
+  --carta: #f4d8c6;
+  --carta-scura: #ebc7b1;
+  --inchiostro: #1d1916;
+  --inchiostro-2: #5b4f48;
+  --inchiostro-3: #85766d;
+  --filetto: #d9cbc2;
+  --filetto-carta: #c9a58f;
+  --rosso: #b3131b;
+  --rosso-scuro: #8c0e14;
+  --rosso-tenue: #f6dcdc;
+  --attenzione: #8a5d00;
+  --attenzione-tenue: #f7ead0;
+  --ok: #2e6a39;
+  --ombra: 0 1px 2px rgba(29, 25, 22, 0.08), 0 12px 32px -20px rgba(29, 25, 22, 0.45);
+
+  --serif: "Bodoni 72", "Didot", Georgia, "Times New Roman", serif;
+  --testo: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --mono: "Cascadia Mono", Consolas, "SFMono-Regular", ui-monospace, monospace;
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fondo: #141110;
+    --pannello: #1d1917;
+    --carta: #2b221e;
+    --carta-scura: #362a25;
+    --inchiostro: #efe7e1;
+    --inchiostro-2: #b8aaa1;
+    --inchiostro-3: #8d8078;
+    --filetto: #3a312c;
+    --filetto-carta: #5a4439;
+    --rosso: #e5484f;
+    --rosso-scuro: #ff6b70;
+    --rosso-tenue: #3b1d1e;
+    --attenzione: #e3b04b;
+    --attenzione-tenue: #33281a;
+    --ok: #6fbf7c;
+    --ombra: 0 1px 2px rgba(0, 0, 0, 0.5), 0 12px 32px -18px rgba(0, 0, 0, 0.9);
+    color-scheme: dark;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--fondo);
+  color: var(--inchiostro);
+  font-family: var(--testo);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+:focus-visible {
+  outline: 2px solid var(--rosso);
+  outline-offset: 2px;
+}
+
+/* --- Barra in alto ------------------------------------------------------- */
+.testata-app {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px clamp(16px, 3vw, 32px);
+  border-bottom: 1px solid var(--filetto);
+  background: var(--pannello);
+}
+
+.testata-app__nome {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.marchio {
+  font-family: var(--serif);
+  font-size: 1.55rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.sottotitolo-app {
+  color: var(--inchiostro-3);
+  font-size: 0.85rem;
+}
+
+.avviso-globale {
+  margin: 12px clamp(16px, 3vw, 32px) 0;
+  padding: 10px 14px;
+  border-radius: 6px;
+  background: var(--attenzione-tenue);
+  color: var(--inchiostro);
+  border: 1px solid var(--filetto);
+}
+
+.avviso-globale--ok {
+  border-color: var(--ok);
+}
+
+.avviso-globale--errore {
+  background: var(--rosso-tenue);
+  border-color: var(--rosso);
+}
+
+/* --- Impaginato ---------------------------------------------------------- */
+.impaginato {
+  display: grid;
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+  gap: clamp(16px, 2.5vw, 32px);
+  padding: clamp(16px, 3vw, 32px);
+  align-items: start;
+  max-width: 1440px;
+  margin: 0 auto;
+}
+
+@media (max-width: 860px) {
+  .impaginato {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.occhiello {
+  margin: 0;
+  font-family: var(--testo);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--rosso);
+}
+
+.nota {
+  margin: 0;
+  color: var(--inchiostro-3);
+  font-size: 0.82rem;
+}
+
+/* --- La scrivania -------------------------------------------------------- */
+.scrivania {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 20px;
+  background: var(--pannello);
+  border: 1px solid var(--filetto);
+  border-radius: 10px;
+  position: sticky;
+  top: 16px;
+}
+
+@media (max-width: 860px) {
+  .scrivania {
+    position: static;
+  }
+}
+
+.gruppo {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.gruppo__titolo {
+  padding: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--inchiostro-2);
+}
+
+.leghe {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lega {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 10px;
+  align-items: start;
+  padding: 10px 12px;
+  border: 1px solid var(--filetto);
+  border-radius: 8px;
+  cursor: pointer;
+  background: var(--pannello);
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.lega:hover {
+  border-color: var(--inchiostro-3);
+}
+
+.lega:has(input:checked) {
+  border-color: var(--rosso);
+  background: var(--rosso-tenue);
+}
+
+.lega:has(input:focus-visible) {
+  outline: 2px solid var(--rosso);
+  outline-offset: 2px;
+}
+
+.lega input {
+  grid-row: span 3;
+  margin: 3px 0 0;
+  accent-color: var(--rosso);
+}
+
+.lega__nome {
+  font-weight: 600;
+}
+
+.lega__testata {
+  font-family: var(--serif);
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+  color: var(--inchiostro-2);
+}
+
+.lega__stato {
+  font-size: 0.78rem;
+  color: var(--inchiostro-3);
+}
+
+.lega__stato--pronta {
+  color: var(--ok);
+}
+
+.lega__stato--problema {
+  color: var(--rosso);
+}
+
+select,
+input[type="number"],
+input[type="search"] {
+  width: 100%;
+  padding: 8px 10px;
+  font: inherit;
+  color: var(--inchiostro);
+  background: var(--pannello);
+  border: 1px solid var(--filetto);
+  border-radius: 6px;
+}
+
+select:disabled {
+  color: var(--inchiostro-3);
+  cursor: not-allowed;
+}
+
+.segmenti {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: 1px solid var(--filetto);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.segmento {
+  position: relative;
+  cursor: pointer;
+}
+
+.segmento input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.segmento span {
+  display: block;
+  padding: 8px 10px;
+  text-align: center;
+  font-size: 0.86rem;
+  color: var(--inchiostro-2);
+}
+
+.segmento + .segmento span {
+  border-left: 1px solid var(--filetto);
+}
+
+.segmento input:checked + span {
+  background: var(--inchiostro);
+  color: var(--pannello);
+}
+
+.segmento input:focus-visible + span {
+  outline: 2px solid var(--rosso);
+  outline-offset: -3px;
+}
+
+.dettagli summary {
+  cursor: pointer;
+  font-size: 0.82rem;
+  color: var(--inchiostro-2);
+}
+
+.dettagli[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.manutenzione {
+  padding-top: 16px;
+  border-top: 1px solid var(--filetto);
+}
+
+/* --- Pulsanti ------------------------------------------------------------ */
+.pulsante {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 16px;
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.9rem;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease, opacity 120ms ease;
+}
+
+.pulsante:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pulsante--primario {
+  background: var(--rosso);
+  color: #fff;
+}
+
+.pulsante--primario:not(:disabled):hover {
+  background: var(--rosso-scuro);
+}
+
+.pulsante--leggero {
+  background: transparent;
+  color: var(--inchiostro);
+  border-color: var(--filetto);
+}
+
+.pulsante--leggero:not(:disabled):hover {
+  border-color: var(--inchiostro-3);
+}
+
+/* --- In edicola ---------------------------------------------------------- */
+.edicola {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.edicola__barra {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 36px;
+}
+
+.schede {
+  display: inline-flex;
+  gap: 4px;
+  padding: 3px;
+  background: var(--pannello);
+  border: 1px solid var(--filetto);
+  border-radius: 8px;
+}
+
+.scheda {
+  padding: 6px 14px;
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--inchiostro-2);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.scheda[aria-selected="true"] {
+  background: var(--inchiostro);
+  color: var(--pannello);
+}
+
+/* Quanti punti della pagina vengono dalla memoria, visibile senza aprirla. */
+.scheda__conta {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.2rem;
+  height: 1.2rem;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
+  background: var(--rosso);
+  color: #fff;
+}
+
+.scheda[aria-selected="true"] .scheda__conta {
+  background: var(--pannello);
+  color: var(--inchiostro);
+}
+
+.esito {
+  padding: 14px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--rosso);
+  background: var(--rosso-tenue);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.nota-errore {
+  margin: 0;
+}
+
+.avvisi {
+  margin: 0;
+  padding: 10px 16px 10px 32px;
+  border-radius: 8px;
+  background: var(--attenzione-tenue);
+  color: var(--inchiostro);
+  font-size: 0.85rem;
+}
+
+.vuoto,
+.caricamento {
+  display: grid;
+  place-items: center;
+  gap: 10px;
+  min-height: 420px;
+  padding: 32px;
+  text-align: center;
+  border: 1px dashed var(--filetto-carta);
+  border-radius: 10px;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0 27px,
+    color-mix(in srgb, var(--filetto-carta) 30%, transparent) 27px 28px
+  );
+}
+
+.vuoto__titolo {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 1.6rem;
+}
+
+.caricamento__foglio {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(360px, 80%);
+}
+
+.caricamento__foglio span {
+  display: block;
+  height: 12px;
+  border-radius: 3px;
+  background: var(--carta-scura);
+  animation: respiro 1.4s ease-in-out infinite;
+}
+
+.caricamento__foglio span:first-child {
+  height: 28px;
+  width: 80%;
+  margin: 0 auto 6px;
+}
+
+.caricamento__foglio span:nth-child(3) {
+  width: 92%;
+}
+
+.caricamento__foglio span:nth-child(4) {
+  width: 64%;
+}
+
+@keyframes respiro {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .caricamento__foglio span {
+    animation: none;
+  }
+}
+
+.azioni-esito {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+}
+
+.azioni-esito__gruppo {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.azioni-esito--centrate {
+  justify-content: center;
+  margin-top: 14px;
+}
+
+.azioni-esito .nota {
+  flex-basis: 100%;
+}
+
+.azioni-esito__gruppo .nota {
+  flex-basis: auto;
+}
+
+select.selettore-compatto {
+  width: auto;
+}
+
+a.pulsante {
+  text-decoration: none;
+}
+
+a.pulsante[aria-disabled="true"] {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.solo-lettori {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* --- L'immagine generata --------------------------------------------------- */
+.immagine {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.immagine img {
+  display: block;
+  width: 100%;
+  max-width: 560px;
+  aspect-ratio: 9 / 16;
+  object-fit: contain;
+  background: var(--carta);
+  border-radius: 4px;
+  box-shadow: var(--ombra);
+}
+
+.immagine figcaption {
+  text-align: center;
+}
+
+.attesa-immagine {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 0;
+}
+
+.attesa-immagine__foglio {
+  width: 100%;
+  max-width: 560px;
+  aspect-ratio: 9 / 16;
+  border-radius: 4px;
+  border: 1px dashed var(--filetto-carta);
+  background: linear-gradient(
+      100deg,
+      transparent 30%,
+      color-mix(in srgb, var(--pannello) 55%, transparent) 50%,
+      transparent 70%
+    )
+    var(--carta);
+  background-size: 250% 100%;
+  animation: scorrimento 1.8s linear infinite;
+}
+
+@keyframes scorrimento {
+  from {
+    background-position: 125% 0;
+  }
+  to {
+    background-position: -125% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .attesa-immagine__foglio {
+    animation: none;
+  }
+}
+
+.esito a {
+  color: var(--rosso-scuro);
+  font-weight: 600;
+}
+
+.prompt {
+  margin: 0;
+  padding: 18px;
+  max-height: 70vh;
+  overflow: auto;
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--pannello);
+  border: 1px solid var(--filetto);
+  border-radius: 10px;
+}
+
+/* --- La memoria ------------------------------------------------------------ */
+.memoria {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: clamp(16px, 2.5vw, 28px);
+  background: var(--pannello);
+  border: 1px solid var(--filetto);
+  border-radius: 10px;
+}
+
+.memoria__testa {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.memoria__titolo {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 1.45rem;
+  line-height: 1.15;
+}
+
+.memoria__sintesi {
+  margin: 0;
+  max-width: 70ch;
+  font-size: 0.98rem;
+}
+
+.memoria__blocco {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--filetto);
+}
+
+/* I punti della pagina nati dalla memoria: il testo come ritaglio di giornale,
+   sotto il dato che l'ha fatto scattare. */
+.richiami {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.richiamo {
+  display: grid;
+  grid-template-columns: 8.5rem minmax(0, 1fr);
+  gap: 6px 16px;
+  align-items: start;
+}
+
+.richiamo__sezione {
+  padding-top: 9px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--inchiostro-2);
+}
+
+.ritaglio {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0;
+  padding: 9px 14px;
+  background: var(--carta);
+  border-radius: 3px;
+  font-family: var(--serif);
+}
+
+.ritaglio__titolo {
+  font-size: 0.95rem;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.ritaglio__testo {
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.richiamo__perche {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin: 0;
+  font-size: 0.84rem;
+  color: var(--inchiostro-2);
+}
+
+@media (max-width: 640px) {
+  .richiamo {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .richiamo__sezione {
+    padding-top: 0;
+  }
+
+  .richiamo__perche {
+    grid-column: 1;
+  }
+}
+
+/* V N P: la lettera resta, così il colore non è l'unico segnale. La classe non
+   è "esito": quel nome appartiene già al riquadro degli errori. */
+.andamento {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+}
+
+.segno {
+  display: inline-grid;
+  place-items: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 4px;
+  font-family: var(--testo);
+  font-size: 0.7rem;
+  font-weight: 700;
+  cursor: default;
+}
+
+.segno--V {
+  background: color-mix(in srgb, var(--ok) 18%, transparent);
+  color: var(--ok);
+}
+
+.segno--N {
+  background: color-mix(in srgb, var(--inchiostro-3) 20%, transparent);
+  color: var(--inchiostro-2);
+}
+
+.segno--P {
+  background: var(--rosso-tenue);
+  color: var(--rosso);
+}
+
+.andamento__prima {
+  margin-right: 2px;
+  font-size: 0.72rem;
+  color: var(--inchiostro-3);
+}
+
+.notizie {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.notizia {
+  display: grid;
+  grid-template-columns: 7.5rem minmax(0, 1fr) minmax(0, 1.1fr) minmax(0, 0.8fr);
+  gap: 4px 12px;
+  align-items: baseline;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--filetto);
+  font-size: 0.88rem;
+}
+
+.notizia:last-child {
+  border-bottom: 0;
+}
+
+.notizia__stato {
+  justify-self: start;
+  padding: 1px 8px;
+  border: 1px solid var(--filetto);
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--inchiostro-2);
+}
+
+.notizia--usata .notizia__stato {
+  border-color: color-mix(in srgb, var(--ok) 45%, transparent);
+  background: color-mix(in srgb, var(--ok) 14%, transparent);
+  color: var(--ok);
+}
+
+.notizia--ignorata {
+  color: var(--inchiostro-3);
+}
+
+.notizia__soggetto {
+  font-weight: 600;
+}
+
+@media (max-width: 640px) {
+  .notizia {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .notizia__fatto,
+  .notizia__dove {
+    grid-column: 2;
+  }
+}
+
+.regole dl {
+  display: grid;
+  grid-template-columns: 8.5rem minmax(0, 1fr);
+  gap: 8px 16px;
+  margin: 4px 0 0;
+  font-size: 0.85rem;
+}
+
+.regole dt {
+  font-weight: 600;
+}
+
+.regole dd {
+  margin: 0;
+  color: var(--inchiostro-2);
+}
+
+@media (max-width: 640px) {
+  .regole dl {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+
+  .regole dd {
+    margin-bottom: 8px;
+  }
+}
+
+.tabella-scorrevole {
+  overflow-x: auto;
+}
+
+.tabella-memoria {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.84rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.tabella-memoria th {
+  padding: 0 8px 6px;
+  border-bottom: 1px solid var(--inchiostro);
+  text-align: left;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--inchiostro-2);
+}
+
+/* Su un telefono la tabella scorre di lato invece di spezzare ogni cella su
+   quattro righe: vanno a capo soltanto i nomi, che hanno un minimo di respiro. */
+.tabella-memoria td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--filetto);
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.tabella-memoria td.tabella-memoria__nome {
+  min-width: 9rem;
+  white-space: normal;
+}
+
+.tabella-memoria th:first-child,
+.tabella-memoria td:first-child {
+  padding-left: 0;
+}
+
+.tabella-memoria tr:last-child td {
+  border-bottom: 0;
+}
+
+.tabella-memoria .numero {
+  text-align: right;
+}
+
+.tabella-memoria__nome {
+  font-weight: 600;
+}
+
+.tabella-memoria__nome .nota,
+.notizia__soggetto .nota {
+  font-weight: 400;
+}
+
+.filtro-giocatori {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+
+.filtro-giocatori input {
+  width: min(100%, 22rem);
+}
+
+.memoria__blocco > .pulsante {
+  align-self: flex-start;
+}
+
+/* --- Il giornale (anteprima) --------------------------------------------- */
+.giornale {
+  padding: clamp(18px, 3vw, 36px);
+  background: var(--carta);
+  color: var(--inchiostro);
+  border-radius: 4px;
+  box-shadow: var(--ombra);
+  font-family: var(--serif);
+}
+
+.giornale__testata {
+  margin: 0;
+  text-align: center;
+  font-size: clamp(1.7rem, 4.2vw, 3.1rem);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.015em;
+  text-transform: uppercase;
+  padding-bottom: 10px;
+  border-bottom: 3px double var(--inchiostro);
+  text-wrap: balance;
+}
+
+.giornale__data {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--inchiostro);
+  font-family: var(--testo);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.giornale__titolo {
+  margin: 18px 0 6px;
+  font-size: clamp(1.5rem, 3.4vw, 2.5rem);
+  line-height: 1.05;
+  font-weight: 700;
+  text-transform: uppercase;
+  text-wrap: balance;
+}
+
+.giornale__sottotitolo {
+  margin: 0 0 18px;
+  font-style: italic;
+  font-size: 1.05rem;
+  color: var(--inchiostro-2);
+  text-wrap: balance;
+}
+
+.giornale__corpo {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
+  gap: 22px;
+  padding-top: 14px;
+  border-top: 1px solid var(--inchiostro);
+}
+
+@media (max-width: 1080px) {
+  .giornale__corpo {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.giornale__occhiello {
+  display: block;
+  margin-bottom: 6px;
+  font-family: var(--testo);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--rosso);
+}
+
+.giornale__apertura {
+  margin: 0 0 8px;
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.giornale__racconto {
+  columns: 2 19rem;
+  column-gap: 22px;
+  column-rule: 1px solid var(--filetto-carta);
+}
+
+.giornale__racconto p {
+  margin: 0 0 10px;
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
+
+.giornale__laterale {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.riquadro {
+  padding-top: 8px;
+  border-top: 2px solid var(--inchiostro);
+}
+
+.riquadro ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  /* Georgia ha solo cifre "all'antica", che scendono sotto la riga: nel testo
+     corrente sono eleganti, in un elenco di punteggi sembrano storte. */
+  font-family: var(--testo);
+  font-size: 0.86rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.riquadro li {
+  padding: 4px 0;
+  border-bottom: 1px solid var(--filetto-carta);
+}
+
+.riquadro li:last-child {
+  border-bottom: 0;
+}
+
+.classifica {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--testo);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.classifica th {
+  text-align: left;
+  font-size: 0.66rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--inchiostro-2);
+  padding: 0 4px 4px;
+  border-bottom: 1px solid var(--inchiostro);
+}
+
+.classifica td {
+  padding: 4px;
+  border-bottom: 1px solid var(--filetto-carta);
+}
+
+.classifica td:first-child,
+.classifica th:first-child {
+  width: 1.8em;
+  padding-left: 0;
+}
+
+.classifica .numero {
+  text-align: right;
+}
+
+.giornale__lungo {
+  margin-top: 22px;
+  padding-top: 12px;
+  border-top: 1px solid var(--inchiostro);
+}
+
+.giornale__lungo h3,
+.trafiletto h3 {
+  margin: 0 0 6px;
+  font-size: 1rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  text-wrap: balance;
+}
+
+.giornale__lungo p {
+  margin: 0;
+  columns: 2 19rem;
+  column-gap: 22px;
+  font-size: 0.92rem;
+}
+
+/* Il giustificato funziona solo con righe lunghe: in colonne strette, e con
+   nomi di squadra in maiuscolo che non si possono sillabare, apre buchi fra le
+   parole. Si attiva quindi solo quando le colonne hanno respiro. */
+@media (min-width: 1280px) {
+  .giornale__racconto p,
+  .giornale__lungo p {
+    text-align: justify;
+    hyphens: auto;
+  }
+}
+
+.giornale__trafiletti {
+  /* Colonne di testo invece di una griglia: con una griglia i filetti fra i
+     pezzi sono bordi dei singoli elementi, e quando la riga va a capo il primo
+     pezzo della riga nuova si porta dietro filetto e rientro. Il filetto di
+     colonna invece si disegna solo fra colonne vere. */
+  columns: 4 11rem;
+  column-gap: 22px;
+  column-rule: 1px solid var(--filetto-carta);
+  margin-top: 18px;
+  padding-top: 10px;
+  border-top: 2px solid var(--inchiostro);
+}
+
+.trafiletto {
+  break-inside: avoid;
+  padding-bottom: 12px;
+}
+
+.trafiletto h3 {
+  font-size: 0.88rem;
+  line-height: 1.2;
+}
+
+.trafiletto p {
+  margin: 0;
+  font-size: 0.86rem;
+  line-height: 1.45;
+}

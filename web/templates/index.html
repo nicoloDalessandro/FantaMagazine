@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Redazione</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+  <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+</head>
+<body>
+  <header class="testata-app">
+    <div class="testata-app__nome">
+      <span class="marchio">Redazione</span>
+      <span class="sottotitolo-app">Prime pagine dal fantacalcio</span>
+    </div>
+    <div class="testata-app__azioni">
+      <button type="button" class="pulsante pulsante--leggero" id="rinnova-token">Rinnova token</button>
+    </div>
+  </header>
+
+  <div class="avviso-globale" id="avviso-globale" role="status" aria-live="polite" hidden></div>
+
+  <main class="impaginato">
+    <!-- La scrivania: le scelte ---------------------------------------------->
+    <section class="scrivania" aria-labelledby="titolo-scrivania">
+      <h2 id="titolo-scrivania" class="occhiello">La scrivania</h2>
+
+      <fieldset class="gruppo">
+        <legend class="gruppo__titolo">Lega</legend>
+        <div class="leghe" id="leghe" aria-busy="true">
+          <p class="nota">Caricamento delle leghe…</p>
+        </div>
+      </fieldset>
+
+      <div class="gruppo">
+        <label class="gruppo__titolo" for="competizione">Competizione</label>
+        <select id="competizione" disabled></select>
+        <p class="nota" id="nota-competizione"></p>
+      </div>
+
+      <div class="gruppo">
+        <label class="gruppo__titolo" for="giornata">Giornata</label>
+        <select id="giornata" disabled></select>
+      </div>
+
+      <fieldset class="gruppo">
+        <legend class="gruppo__titolo">Scrittura</legend>
+        <div class="segmenti" role="radiogroup">
+          <label class="segmento">
+            <input type="radio" name="scrittura" value="stabile" checked>
+            <span>Stabile</span>
+          </label>
+          <label class="segmento">
+            <input type="radio" name="scrittura" value="varia">
+            <span>Nuova versione</span>
+          </label>
+        </div>
+        <p class="nota" id="nota-scrittura">Rigenerare la stessa giornata dà lo stesso testo.</p>
+        <details class="dettagli">
+          <summary>Seme preciso</summary>
+          <label class="nota" for="seme">Lo stesso seme riproduce la stessa versione.</label>
+          <input type="number" id="seme" inputmode="numeric" min="0" placeholder="es. 42">
+        </details>
+      </fieldset>
+
+      <button type="button" class="pulsante pulsante--primario" id="genera" disabled>
+        Genera la prima pagina
+      </button>
+
+      <details class="dettagli manutenzione">
+        <summary>Manutenzione</summary>
+        <p class="nota">
+          Le giornate già scaricate restano in cache. Svuotala solo se un amministratore
+          ha rettificato dei punteggi a posteriori.
+        </p>
+        <button type="button" class="pulsante pulsante--leggero" id="svuota-cache">Svuota la cache</button>
+      </details>
+    </section>
+
+    <!-- In edicola: il risultato ----------------------------------------------->
+    <section class="edicola" aria-labelledby="titolo-edicola">
+      <div class="edicola__barra">
+        <h2 id="titolo-edicola" class="occhiello">In edicola</h2>
+        <div class="schede" role="tablist" id="schede" hidden>
+          <button type="button" role="tab" class="scheda" id="scheda-anteprima"
+                  aria-selected="true" aria-controls="pannello-anteprima">Anteprima</button>
+          <button type="button" role="tab" class="scheda" id="scheda-prompt"
+                  aria-selected="false" aria-controls="pannello-prompt">Prompt</button>
+          <button type="button" role="tab" class="scheda" id="scheda-memoria"
+                  aria-selected="false" aria-controls="pannello-memoria" hidden>Memoria<span
+                  class="scheda__conta" id="conta-memoria" aria-hidden="true" hidden></span></button>
+          <button type="button" role="tab" class="scheda" id="scheda-immagine"
+                  aria-selected="false" aria-controls="pannello-immagine" hidden>Immagine</button>
+        </div>
+      </div>
+
+      <div class="esito" id="esito" role="alert" hidden></div>
+      <ul class="avvisi" id="avvisi" hidden></ul>
+
+      <div class="vuoto" id="vuoto">
+        <p class="vuoto__titolo">La pagina è ancora bianca</p>
+        <p class="nota">Scegli una lega e genera la prima pagina dell'ultima giornata.</p>
+      </div>
+
+      <div class="caricamento" id="caricamento" hidden>
+        <div class="caricamento__foglio" aria-hidden="true">
+          <span></span><span></span><span></span><span></span>
+        </div>
+        <p class="nota" id="caricamento-testo">Il redattore sta scrivendo…</p>
+      </div>
+
+      <div id="pannello-anteprima" role="tabpanel" aria-labelledby="scheda-anteprima" hidden>
+        <article class="giornale" id="giornale"></article>
+      </div>
+
+      <div id="pannello-prompt" role="tabpanel" aria-labelledby="scheda-prompt" hidden>
+        <pre class="prompt" id="prompt" tabindex="0"></pre>
+      </div>
+
+      <div id="pannello-memoria" role="tabpanel" aria-labelledby="scheda-memoria" hidden>
+        <div class="memoria" id="memoria"></div>
+      </div>
+
+      <div id="pannello-immagine" role="tabpanel" aria-labelledby="scheda-immagine" hidden>
+        <div class="attesa-immagine" id="attesa-immagine" hidden>
+          <div class="attesa-immagine__foglio" aria-hidden="true"></div>
+          <p class="nota" id="attesa-immagine-testo" aria-live="polite"></p>
+        </div>
+        <figure class="immagine" id="immagine" hidden>
+          <img id="immagine-img" alt="Prima pagina generata da Gemini">
+          <figcaption class="nota" id="immagine-didascalia"></figcaption>
+        </figure>
+        <div class="azioni-esito azioni-esito--centrate" id="azioni-immagine" hidden>
+          <button type="button" class="pulsante pulsante--primario" id="salva-immagine">Salva nell'archivio</button>
+          <a class="pulsante pulsante--leggero" id="scarica-immagine" href="#">Scarica</a>
+          <button type="button" class="pulsante pulsante--leggero" id="rigenera-immagine">Rigenera l'immagine</button>
+        </div>
+      </div>
+
+      <div class="azioni-esito" id="azioni-esito" hidden>
+        <div class="azioni-esito__gruppo">
+          <button type="button" class="pulsante pulsante--primario" id="genera-immagine">Genera l'immagine</button>
+          <label class="solo-lettori" for="risoluzione">Risoluzione</label>
+          <select id="risoluzione" class="selettore-compatto"></select>
+          <span class="nota" id="costo-immagine"></span>
+        </div>
+        <div class="azioni-esito__gruppo">
+          <button type="button" class="pulsante pulsante--leggero" id="copia">Copia il prompt</button>
+          <button type="button" class="pulsante pulsante--leggero" id="altra-versione">Scrivila diversamente</button>
+        </div>
+        <span class="nota" id="dettagli-esito"></span>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

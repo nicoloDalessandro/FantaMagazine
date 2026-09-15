@@ -1,0 +1,21 @@
+# Credenziali e token - non devono mai finire in un repository
+credentials
+.fanta_token
+.fanta_leghe.json
+.gemini_key
+.env
+
+# Cache dello storico e bozze delle immagini (rigenerabili)
+.cache/
+
+# Prime pagine generate: file pesanti, non codice
+prime_pagine/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# IDE
+.idea/
