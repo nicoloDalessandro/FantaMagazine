@@ -6,7 +6,7 @@
  * Regola ferma: ogni testo che arriva dal server entra nella pagina solo come
  * testo, mai come HTML. I nomi delle squadre li scrivono gli altri
  * partecipanti della lega: una squadra chiamata "<img onerror=...>" non deve
- * poter eseguire nulla in una pagina che sa rinnovare i token.
+ * poter eseguire nulla in una pagina in cui si scrive la password.
  */
 (() => {
   const $ = (id) => document.getElementById(id);
@@ -19,8 +19,26 @@
     seme: $("seme"),
     notaScrittura: $("nota-scrittura"),
     genera: $("genera"),
-    rinnovaToken: $("rinnova-token"),
     svuotaCache: $("svuota-cache"),
+    barraAccount: $("barra-account"),
+    accountNome: $("account-nome"),
+    apriLeghe: $("apri-leghe"),
+    esci: $("esci"),
+    schermataAccesso: $("schermata-accesso"),
+    schermataLeghe: $("schermata-leghe"),
+    schermataRedazione: $("schermata-redazione"),
+    titoloAccesso: $("titolo-accesso"),
+    moduloAccesso: $("modulo-accesso"),
+    accessoUtente: $("accesso-utente"),
+    accessoPassword: $("accesso-password"),
+    erroreAccesso: $("errore-accesso"),
+    entra: $("entra"),
+    accessoChrome: $("accesso-chrome"),
+    titoloLeghe: $("titolo-leghe"),
+    elencoLeghe: $("elenco-leghe"),
+    aggiornaLeghe: $("aggiorna-leghe"),
+    salvaLeghe: $("salva-leghe"),
+    annullaLeghe: $("annulla-leghe"),
     avvisoGlobale: $("avviso-globale"),
     schede: $("schede"),
     schedaAnteprima: $("scheda-anteprima"),
@@ -59,6 +77,9 @@
   };
 
   const stato = {
+    account: null,
+    schermata: null,
+    impostazioni: [],
     leghe: [],
     lega: null,
     risultato: null,
@@ -120,8 +141,10 @@
     }
   }
 
+  /** Errori che si risolvono solo entrando di nuovo con il proprio account. */
   const problemaDiToken = (codice) =>
-    typeof codice === "string" && (codice.startsWith("token") || codice === "lega_sconosciuta");
+    typeof codice === "string" &&
+    (codice.startsWith("token") || ["accesso_sessione_scaduta", "accesso_mancante"].includes(codice));
 
   async function chiama(percorso, { metodo = "GET", corpo } = {}) {
     let risposta;
@@ -184,8 +207,11 @@
     nodi.genera.disabled = stato.occupato || !competizioneCorrente();
     nodi.altraVersione.disabled = stato.occupato;
     nodi.copia.disabled = stato.occupato;
-    nodi.rinnovaToken.disabled = stato.occupato;
     nodi.svuotaCache.disabled = stato.occupato;
+    for (const pulsante of [nodi.entra, nodi.accessoChrome, nodi.apriLeghe, nodi.esci, nodi.aggiornaLeghe, nodi.annullaLeghe]) {
+      pulsante.disabled = stato.occupato;
+    }
+    nodi.salvaLeghe.disabled = stato.occupato || !stato.impostazioni.length;
 
     const senzaGemini = !stato.gemini || !stato.gemini.disponibile;
     nodi.generaImmagine.disabled = stato.occupato || !stato.risultato || senzaGemini;
@@ -238,9 +264,8 @@
       nodi.giornata.replaceChildren();
       nodi.giornata.disabled = true;
       if (problemaDiToken(errore.codice)) {
-        mostraAvviso(
-          "Servono i token delle tue leghe: fai l'accesso su leghe.fantacalcio.it in Chrome, poi premi «Rinnova token».",
-        );
+        mostraSchermata("accesso");
+        mostraErroreAccesso(errore.message);
       }
       aggiornaControlli();
     } finally {
@@ -250,10 +275,20 @@
 
   function disegnaLeghe() {
     if (!stato.leghe.length) {
-      nodi.leghe.replaceChildren(
-        el("p", { classe: "nota" }, "Nessuna lega trovata. Premi «Rinnova token»."),
+      const scegli = el(
+        "button",
+        { classe: "pulsante pulsante--leggero", attributi: { type: "button" } },
+        "Scegli le tue leghe",
       );
-      aggiornaControlli();
+      scegli.addEventListener("click", apriImpostazioni);
+      nodi.leghe.replaceChildren(
+        el("p", { classe: "nota" }, "Nessuna lega in uso: le hai escluse tutte."),
+        scegli,
+      );
+      stato.lega = null;
+      nodi.competizione.replaceChildren();
+      nodi.competizione.disabled = true;
+      disegnaGiornate();
       return;
     }
 
@@ -388,9 +423,9 @@
       const pulsante = el(
         "button",
         { classe: "pulsante pulsante--primario", attributi: { type: "button" } },
-        "Rinnova token",
+        "Entra di nuovo",
       );
-      pulsante.addEventListener("click", rinnovaToken);
+      pulsante.addEventListener("click", () => mostraSchermata("accesso"));
       nodi.esito.append(pulsante);
     }
     if (erroreDiGemini(errore.codice)) {
@@ -1069,29 +1104,321 @@
     }
   }
 
-  async function rinnovaToken() {
+  // --- Account -------------------------------------------------------------------
+  const quanteLeghe = (n) => `${n} ${n === 1 ? "lega" : "leghe"}`;
+
+  function mostraSchermata(nome) {
+    stato.schermata = nome;
+    nodi.schermataAccesso.hidden = nome !== "accesso";
+    nodi.schermataLeghe.hidden = nome !== "leghe";
+    nodi.schermataRedazione.hidden = nome !== "redazione";
+    nodi.barraAccount.hidden = nome === "accesso" || !(stato.account && stato.account.collegato);
+    nodi.apriLeghe.hidden = nome === "leghe";
+    // Il fuoco va dove si comincia a leggere: chi usa un lettore di schermo
+    // deve accorgersi che la pagina è cambiata.
+    if (nome === "accesso") {
+      (nodi.accessoUtente.value ? nodi.accessoPassword : nodi.accessoUtente).focus();
+    } else if (nome === "leghe") {
+      nodi.titoloLeghe.focus();
+    }
+  }
+
+  function aggiornaAccount(account) {
+    stato.account = account;
+    const collegato = Boolean(account && account.collegato);
+    nodi.accountNome.textContent = collegato ? account.username || "Accesso copiato da Chrome" : "";
+    nodi.barraAccount.hidden = !collegato || stato.schermata === "accesso";
+  }
+
+  async function caricaAccount() {
+    try {
+      aggiornaAccount(await chiama("/api/account"));
+    } catch (errore) {
+      aggiornaAccount(null);
+      mostraAvviso(errore.message, "errore");
+    }
+    return stato.account;
+  }
+
+  function mostraErroreAccesso(testo) {
+    nodi.erroreAccesso.textContent = testo || "";
+    nodi.erroreAccesso.hidden = !testo;
+  }
+
+  async function entra(evento) {
+    evento.preventDefault();
     if (stato.occupato) return;
+    const utente = nodi.accessoUtente.value.trim();
+    const password = nodi.accessoPassword.value;
+    if (!utente || !password) {
+      mostraErroreAccesso("Inserisci username e password.");
+      (utente ? nodi.accessoPassword : nodi.accessoUtente).focus();
+      return;
+    }
+
+    mostraErroreAccesso("");
+    nascondiAvviso();
     impostaOccupato(true);
-    nodi.esito.hidden = true;
+    const etichetta = nodi.entra.textContent;
+    nodi.entra.textContent = "Accesso in corso…";
+    let riuscito = false;
+    try {
+      const dati = await chiama("/api/accesso", { metodo: "POST", corpo: { utente, password } });
+      aggiornaAccount(dati.account);
+      mostraAvviso(`Accesso riuscito: ${quanteLeghe(dati.leghe.length)} trovate.`, "ok");
+      riuscito = true;
+    } catch (errore) {
+      mostraErroreAccesso(errore.message);
+    } finally {
+      // La password non resta nel modulo, che l'accesso sia riuscito o no.
+      nodi.accessoPassword.value = "";
+      nodi.entra.textContent = etichetta;
+      impostaOccupato(false);
+    }
+    if (riuscito) {
+      azzeraRedazione();
+      await apriImpostazioni();
+    } else {
+      nodi.accessoPassword.focus();
+    }
+  }
+
+  async function accessoChrome() {
+    if (stato.occupato) return;
+    mostraErroreAccesso("");
+    impostaOccupato(true);
     mostraAvviso(
-      "Sto leggendo i token da Chrome. Se compare il popup «Allow remote debugging?», clicca Allow: può volerci un minuto.",
+      "Sto copiando l'accesso da Chrome. Se compare il popup «Allow remote debugging?», clicca Allow: può volerci un minuto.",
     );
-    const etichetta = nodi.rinnovaToken.textContent;
-    nodi.rinnovaToken.textContent = "Rinnovo in corso…";
+    let riuscito = false;
     try {
       const dati = await chiama("/api/token", { metodo: "POST", corpo: {} });
-      const nomi = dati.leghe.map((l) => l.nome).join(", ");
-      mostraAvviso(
-        `Token rinnovati per ${dati.leghe.length} ${dati.leghe.length === 1 ? "lega" : "leghe"}: ${nomi}.`,
-        "ok",
-      );
-      await caricaLeghe();
+      await caricaAccount();
+      mostraAvviso(`Accesso copiato da Chrome: ${quanteLeghe(dati.leghe.length)}.`, "ok");
+      riuscito = true;
+    } catch (errore) {
+      nascondiAvviso();
+      mostraErroreAccesso(errore.message);
+    } finally {
+      impostaOccupato(false);
+    }
+    if (riuscito) {
+      azzeraRedazione();
+      await apriImpostazioni();
+    }
+  }
+
+  async function esci() {
+    if (stato.occupato) return;
+    const conferma = window.confirm(
+      "Uscire da questo account?\n\nUtente e token delle leghe verranno cancellati da questo computer: " +
+        "per tornare servirà di nuovo la password. Le scelte su leghe e testate restano.",
+    );
+    if (!conferma) return;
+    impostaOccupato(true);
+    try {
+      aggiornaAccount(await chiama("/api/esci", { metodo: "POST", corpo: {} }));
+      azzeraRedazione();
+      mostraSchermata("accesso");
+      mostraAvviso("Sei uscito: utente e token sono stati cancellati da questo computer.", "ok");
     } catch (errore) {
       mostraAvviso(errore.message, "errore");
     } finally {
-      nodi.rinnovaToken.textContent = etichetta;
       impostaOccupato(false);
     }
+  }
+
+  /** Dimentica leghe e pagina mostrate: appartenevano all'accesso di prima. */
+  function azzeraRedazione() {
+    stato.leghe = [];
+    stato.lega = null;
+    stato.risultato = null;
+    azzeraImmagine();
+    nodi.leghe.replaceChildren();
+    nodi.competizione.replaceChildren();
+    nodi.competizione.disabled = true;
+    nodi.giornata.replaceChildren();
+    nodi.giornata.disabled = true;
+    nodi.esito.hidden = true;
+    nodi.avvisi.hidden = true;
+    mostraStato("vuoto");
+  }
+
+  // --- Le tue leghe ------------------------------------------------------------------
+  async function apriImpostazioni() {
+    if (stato.occupato) return;
+    mostraSchermata("leghe");
+    await caricaImpostazioni();
+  }
+
+  async function caricaImpostazioni(bozza = null) {
+    impostaOccupato(true);
+    nodi.elencoLeghe.setAttribute("aria-busy", "true");
+    nodi.elencoLeghe.replaceChildren(
+      el("p", { classe: "nota" }, "Carico le tue leghe e le loro competizioni…"),
+    );
+    try {
+      stato.impostazioni = await chiama("/api/impostazioni");
+      // Chi aggiorna l'elenco a metà delle modifiche non deve perderle.
+      for (const voce of stato.impostazioni) {
+        const modificata = bozza && bozza.find((b) => b.alias === voce.alias);
+        if (!modificata) continue;
+        voce.attiva = modificata.attiva;
+        voce.testata = modificata.testata;
+        for (const competizione of voce.competizioni) {
+          competizione.attiva = !modificata.competizioni_escluse.includes(competizione.id);
+        }
+      }
+      disegnaImpostazioni();
+    } catch (errore) {
+      stato.impostazioni = [];
+      nodi.elencoLeghe.replaceChildren(el("p", { classe: "nota-errore" }, errore.message));
+      if (problemaDiToken(errore.codice)) {
+        mostraSchermata("accesso");
+        mostraErroreAccesso(errore.message);
+      }
+    } finally {
+      nodi.elencoLeghe.setAttribute("aria-busy", "false");
+      impostaOccupato(false);
+    }
+  }
+
+  function disegnaImpostazioni() {
+    if (!stato.impostazioni.length) {
+      nodi.elencoLeghe.replaceChildren(el("p", { classe: "nota" }, "Il tuo account non ha leghe."));
+      return;
+    }
+    nodi.elencoLeghe.replaceChildren(...stato.impostazioni.map(disegnaSceltaLega));
+  }
+
+  function disegnaSceltaLega(voce) {
+    const scheda = el("fieldset", { classe: "scelta-lega", attributi: { "data-alias": voce.alias } });
+    const attiva = el("input", { classe: "scelta-lega__attiva", attributi: { type: "checkbox" } });
+    attiva.checked = voce.attiva;
+
+    const testata = el("input", {
+      classe: "scelta-lega__testata",
+      attributi: { type: "text", maxlength: "60", placeholder: voce.testata_predefinita, spellcheck: "false" },
+    });
+    testata.value = voce.testata;
+
+    let competizioni;
+    if (voce.errore) {
+      competizioni = el("p", { classe: "nota-errore" }, `Competizioni non disponibili: ${voce.errore}`);
+    } else if (!voce.competizioni.length) {
+      competizioni = el("p", { classe: "nota" }, "Nessuna competizione.");
+    } else {
+      competizioni = el(
+        "div",
+        { classe: "scelta-lega__competizioni" },
+        ...voce.competizioni.map((competizione) => {
+          const casella = el("input", { attributi: { type: "checkbox", value: competizione.id } });
+          casella.checked = competizione.attiva;
+          return el("label", { classe: "casella" }, casella, el("span", {}, competizione.nome));
+        }),
+      );
+    }
+
+    const aggiornaAspetto = () => {
+      scheda.classList.toggle("scelta-lega--spenta", !attiva.checked);
+      testata.disabled = !attiva.checked;
+      for (const casella of scheda.querySelectorAll(".scelta-lega__competizioni input")) {
+        casella.disabled = !attiva.checked;
+      }
+    };
+    attiva.addEventListener("change", aggiornaAspetto);
+
+    scheda.append(
+      el(
+        "legend",
+        { classe: "scelta-lega__testa" },
+        el("label", { classe: "casella" }, attiva, el("span", { classe: "scelta-lega__nome" }, voce.nome)),
+      ),
+      el(
+        "label",
+        { classe: "gruppo" },
+        el("span", { classe: "gruppo__titolo" }, "Nome del giornale"),
+        testata,
+        el("span", { classe: "nota" }, `Se lo lasci vuoto: ${voce.testata_predefinita}`),
+      ),
+      el("div", { classe: "gruppo" }, el("span", { classe: "gruppo__titolo" }, "Competizioni"), competizioni),
+    );
+    aggiornaAspetto();
+    return scheda;
+  }
+
+  function raccogliImpostazioni() {
+    return [...nodi.elencoLeghe.querySelectorAll(".scelta-lega")].map((scheda) => {
+      const voce = stato.impostazioni.find((v) => v.alias === scheda.dataset.alias);
+      const caselle = [...scheda.querySelectorAll(".scelta-lega__competizioni input")];
+      return {
+        alias: scheda.dataset.alias,
+        attiva: scheda.querySelector(".scelta-lega__attiva").checked,
+        testata: scheda.querySelector(".scelta-lega__testata").value,
+        // Se le competizioni non si sono potute caricare, le esclusioni salvate
+        // restano quelle di prima invece di azzerarsi.
+        competizioni_escluse:
+          voce && voce.errore
+            ? voce.competizioni_escluse
+            : caselle.filter((casella) => !casella.checked).map((casella) => casella.value),
+      };
+    });
+  }
+
+  async function salvaImpostazioni() {
+    if (stato.occupato || !stato.impostazioni.length) return;
+    const leghe = raccogliImpostazioni();
+    impostaOccupato(true);
+    let riuscito = false;
+    try {
+      await chiama("/api/impostazioni", { metodo: "POST", corpo: { leghe } });
+      mostraAvviso(
+        stato.risultato
+          ? "Scelte salvate. Rigenera la pagina per vedere la nuova testata."
+          : "Scelte salvate.",
+        "ok",
+      );
+      riuscito = true;
+    } catch (errore) {
+      mostraAvviso(errore.message, "errore");
+    } finally {
+      impostaOccupato(false);
+    }
+    if (riuscito) {
+      mostraSchermata("redazione");
+      await caricaLeghe();
+    }
+  }
+
+  async function aggiornaElenco() {
+    if (stato.occupato) return;
+    const bozza = raccogliImpostazioni();
+    // Chi è entrato da Chrome non ha un utente salvato: l'elenco si rilegge da lì.
+    const daChrome = !(stato.account && stato.account.aggiornabile);
+    impostaOccupato(true);
+    mostraAvviso(daChrome ? "Rileggo le tue leghe da Chrome: può volerci un minuto." : "Cerco le tue leghe…");
+    let riuscito = false;
+    try {
+      const dati = await chiama(daChrome ? "/api/token" : "/api/leghe/aggiorna", { metodo: "POST", corpo: {} });
+      if (dati.account) aggiornaAccount(dati.account);
+      else await caricaAccount();
+      mostraAvviso(`Elenco aggiornato: ${quanteLeghe(dati.leghe.length)}.`, "ok");
+      riuscito = true;
+    } catch (errore) {
+      mostraAvviso(errore.message, "errore");
+      if (problemaDiToken(errore.codice)) {
+        mostraSchermata("accesso");
+        mostraErroreAccesso(errore.message);
+      }
+    } finally {
+      impostaOccupato(false);
+    }
+    if (riuscito) await caricaImpostazioni(bozza);
+  }
+
+  function tornaAllaRedazione() {
+    mostraSchermata("redazione");
+    if (!stato.leghe.length) caricaLeghe();
   }
 
   async function svuotaCache() {
@@ -1124,8 +1451,14 @@
     nodi.genera.addEventListener("click", () => genera());
     nodi.altraVersione.addEventListener("click", () => genera({ nuovaVersione: true }));
     nodi.copia.addEventListener("click", copia);
-    nodi.rinnovaToken.addEventListener("click", rinnovaToken);
     nodi.svuotaCache.addEventListener("click", svuotaCache);
+    nodi.moduloAccesso.addEventListener("submit", entra);
+    nodi.accessoChrome.addEventListener("click", accessoChrome);
+    nodi.apriLeghe.addEventListener("click", apriImpostazioni);
+    nodi.esci.addEventListener("click", esci);
+    nodi.aggiornaLeghe.addEventListener("click", aggiornaElenco);
+    nodi.salvaLeghe.addEventListener("click", salvaImpostazioni);
+    nodi.annullaLeghe.addEventListener("click", tornaAllaRedazione);
     nodi.schedaAnteprima.addEventListener("click", () => mostraScheda("anteprima"));
     nodi.schedaPrompt.addEventListener("click", () => mostraScheda("prompt"));
     nodi.schedaMemoria.addEventListener("click", () => mostraScheda("memoria"));
@@ -1153,8 +1486,19 @@
     mostraScheda(stato.scheda);
     mostraStato("vuoto");
     aggiornaNotaScrittura();
-    caricaLeghe();
     caricaGemini();
+    avviaAccount();
+  }
+
+  /** Senza un accesso si parte dal modulo; con un accesso, dalla redazione. */
+  async function avviaAccount() {
+    const account = await caricaAccount();
+    if (account && account.collegato) {
+      mostraSchermata("redazione");
+      await caricaLeghe();
+    } else {
+      mostraSchermata("accesso");
+    }
   }
 
   avvia();

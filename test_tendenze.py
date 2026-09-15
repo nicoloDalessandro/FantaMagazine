@@ -19,8 +19,8 @@ try:
 except (AttributeError, ValueError):
     pass
 
-from fantatana import prompt, tendenze
-from fantatana.analysis import Formazione, Giocatore, Partita
+from fantamagazine import prompt, tendenze
+from fantamagazine.analysis import Formazione, Giocatore, Partita
 
 SQUADRE = ["Sfigati FC", "Bomber United", "Muro Difensivo", "Media Mediocre"]
 

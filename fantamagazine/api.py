@@ -37,7 +37,7 @@ class Client:
             raise TokenScaduto(
                 f"L'API ha risposto {risposta.status_code} su {path}.\n"
                 "Il token e' scaduto o appartiene a un'altra lega.\n"
-                "Rigeneralo con:  python refresh_token.py"
+                "Rifai l'accesso con:  python main.py --accedi"
             )
         if not risposta.ok:
             raise ApiError(f"{risposta.status_code} su {path}: {risposta.text[:200]}")

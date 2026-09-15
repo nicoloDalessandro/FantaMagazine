@@ -19,7 +19,7 @@ except (AttributeError, ValueError):
     pass
 
 import app as applicazione
-from fantatana import auth, browser, prompt, servizio
+from fantamagazine import auth, browser, prompt, servizio
 
 RADICE = Path(__file__).resolve().parent
 
@@ -206,8 +206,8 @@ def test_genera_passa_i_parametri() -> None:
 
 def test_genera_restituisce_la_memoria() -> None:
     """La scheda Memoria vive di questi dati: resoconto e richiami devono arrivare interi."""
-    from fantatana import resoconto, tendenze
-    from fantatana.analysis import RigaClassifica
+    from fantamagazine import resoconto, tendenze
+    from fantamagazine.analysis import RigaClassifica
     from test_tendenze import _storico_finto
 
     storia = _storico_finto()
@@ -296,7 +296,7 @@ def test_rinnovo_non_restituisce_token() -> None:
         {"alias": "sagrato", "nome": "Sagrato", "id": 2, "token": "eyJ-segreto-2"},
     ]
     with _sostituisci(browser, leggi_leghe=lambda: lette), \
-         _sostituisci(auth, salva_leghe=lambda voci: salvate.extend(voci)):
+         _sostituisci(auth, salva_leghe=lambda voci: salvate.extend(voci), dimentica_utente=lambda: None):
         risposta = _client().post("/api/token", json={})
     assert risposta.status_code == 200, risposta.status_code
     corpo = risposta.get_data(as_text=True)
@@ -333,10 +333,125 @@ def test_interpretazione_uscita_browser() -> None:
     print("  ok  uscita del browser interpretata, voci incomplete scartate")
 
 
+# --- Accesso e scelte -------------------------------------------------------------------
+PASSWORD = "Segreta-Web 123"
+
+
+def test_account_senza_segreti() -> None:
+    from fantamagazine import accesso
+    from test_accesso import _cartella
+
+    with _cartella():
+        vuoto = _client().get("/api/account").get_json()
+        assert vuoto == {"collegato": False, "username": None, "aggiornabile": False, "leghe": 0}, vuoto
+
+        auth.salva_leghe([{"alias": "tana", "nome": "Tana", "token": "eyJ-lega-segreto"}])
+        auth.salva_utente(accesso.Utente(id=7, username="mario", jwt="eyJ-utente-segreto", token_auth="auth-segreto"))
+        risposta = _client().get("/api/account")
+    corpo = risposta.get_data(as_text=True)
+    assert risposta.get_json() == {"collegato": True, "username": "mario", "aggiornabile": True, "leghe": 1}
+    assert "segreto" not in corpo, "un token è finito nella risposta"
+    print("  ok  /api/account dice chi è entrato e con quante leghe, mai un token")
+
+
+def test_accesso_valida_prima_di_chiamare() -> None:
+    chiamate = []
+    guasti = [
+        {"utente": "mario"},
+        {"password": PASSWORD},
+        {"utente": "  ", "password": PASSWORD},
+        {"utente": "mario", "password": ""},
+        {"utente": ["mario"], "password": PASSWORD},
+        {"utente": "mario", "password": 12345},
+        {"utente": "m" * 201, "password": PASSWORD},
+        {"utente": "mario", "password": "p" * 201},
+    ]
+    with _sostituisci(servizio, accedi=lambda *a: chiamate.append(a)):
+        for corpo in guasti:
+            risposta = _client().post("/api/accesso", json=corpo)
+            assert risposta.status_code == 400, (corpo, risposta.status_code)
+            assert PASSWORD not in risposta.get_data(as_text=True)
+        elenco = _client().post("/api/accesso", json=["mario", PASSWORD])
+        assert elenco.status_code == 400, f"un corpo che non è un oggetto: {elenco.status_code}"
+        esterna = _client().post(
+            "/api/accesso", json={"utente": "mario", "password": PASSWORD},
+            headers={"Origin": "https://attaccante.example"},
+        )
+        da_form = _client().post("/api/accesso", data={"utente": "mario", "password": PASSWORD})
+    assert esterna.status_code == 403 and da_form.status_code == 415, (esterna.status_code, da_form.status_code)
+    assert not chiamate, "con una richiesta non valida l'accesso non doveva partire"
+    print(f"  ok  {len(guasti)} richieste di accesso non valide, da un altro sito o da un form: nessun tentativo")
+
+
+def test_accesso_riuscito_e_fallito() -> None:
+    ricevuti = []
+
+    def riuscito(utente, password):
+        ricevuti.append((utente, password))
+        return [{"alias": "tana", "nome": "Tana"}]
+
+    account = servizio.Account(collegato=True, username="mario", aggiornabile=True, leghe=1)
+    with _sostituisci(servizio, accedi=riuscito, stato_account=lambda: account):
+        risposta = _client().post("/api/accesso", json={"utente": "mario", "password": f" {PASSWORD} "})
+    assert risposta.status_code == 200, risposta.get_data(as_text=True)
+    assert ricevuti == [("mario", f" {PASSWORD} ")], "la password va passata intatta, spazi compresi"
+    assert risposta.get_json() == {
+        "leghe": [{"alias": "tana", "nome": "Tana"}],
+        "account": {"collegato": True, "username": "mario", "aggiornabile": True, "leghe": 1},
+    }
+    assert PASSWORD not in risposta.get_data(as_text=True)
+
+    def sbagliata(*_a):
+        raise servizio.ErroreServizio("Username o password non validi.", "accesso_credenziali")
+
+    with _sostituisci(servizio, accedi=sbagliata):
+        risposta = _client().post("/api/accesso", json={"utente": "mario", "password": PASSWORD})
+    assert risposta.status_code == 401
+    assert risposta.get_json() == {"errore": "Username o password non validi.", "codice": "accesso_credenziali"}
+    print("  ok  accesso riuscito: leghe e account; sbagliato: 401 con codice; la password non torna mai")
+
+
+def test_scelte_esci_e_aggiorna_dal_web() -> None:
+    salvate, uscite = [], []
+    voce = servizio.ImpostazioneLega(
+        alias="tana", nome="Tana", attiva=True, testata="", testata_predefinita="LA GAZZETTA DI TANA",
+        competizioni=[servizio.ImpostazioneCompetizione("1", "Campionato", True)],
+    )
+    account = servizio.Account(collegato=False, username=None, aggiornabile=False, leghe=0)
+    with _sostituisci(
+        servizio,
+        impostazioni_leghe=lambda: [voce],
+        salva_impostazioni=lambda voci: salvate.append(voci),
+        esci=lambda: uscite.append(True),
+        aggiorna_leghe=lambda: [{"alias": "tana", "nome": "Tana"}],
+        stato_account=lambda: account,
+    ):
+        elenco = _client().get("/api/impostazioni").get_json()
+        salva = _client().post("/api/impostazioni", json={"leghe": [{"alias": "tana", "attiva": False}]})
+        esci = _client().post("/api/esci", json={})
+        aggiorna = _client().post("/api/leghe/aggiorna", json={})
+        esci_da_form = _client().post("/api/esci", data="x=1")
+    assert elenco[0]["competizioni"] == [{"id": "1", "nome": "Campionato", "attiva": True}], elenco
+    assert elenco[0]["testata_predefinita"] == "LA GAZZETTA DI TANA"
+    assert salva.status_code == 200 and salvate == [[{"alias": "tana", "attiva": False}]], salvate
+    assert esci.status_code == 200 and esci.get_json()["collegato"] is False and uscite == [True]
+    assert aggiorna.get_json()["leghe"] == [{"alias": "tana", "nome": "Tana"}]
+    assert esci_da_form.status_code == 415 and uscite == [True], "uscire da un form esterno non deve funzionare"
+
+    def rifiuta(_voci):
+        raise servizio.ErroreServizio("Una delle leghe indicate non è fra le tue.", "impostazioni_non_valide")
+
+    with _sostituisci(servizio, salva_impostazioni=rifiuta):
+        risposta = _client().post("/api/impostazioni", json={"leghe": [{"alias": "altrui"}]})
+    assert risposta.status_code == 400 and risposta.get_json()["codice"] == "impostazioni_non_valide"
+    print("  ok  scelte lette e salvate, uscita e aggiornamento dal web; errori con il loro codice")
+
+
 # --- Codici di uscita -----------------------------------------------------------------
 def test_codici_di_uscita_cli() -> None:
     assert servizio.ErroreServizio("", "token_scaduto").uscita == 2
     assert servizio.ErroreServizio("", "lega_sconosciuta").uscita == 2
+    assert servizio.ErroreServizio("", "accesso_credenziali").uscita == 2
     assert servizio.ErroreServizio("", "nessuna_giornata").uscita == 1
     print("  ok  codici di uscita della riga di comando invariati")
 

@@ -1,9 +1,8 @@
 """Le operazioni del progetto, indipendenti da chi le usa.
 
-La riga di comando e l'interfaccia web fanno le stesse cose — elencare le leghe,
-generare la prima pagina e la sua immagine, rinnovare i token, svuotare la
-cache — ma le
-presentano in modo diverso. Qui vive la logica una volta sola: niente stampe,
+La riga di comando e l'interfaccia web fanno le stesse cose — entrare con il
+proprio account, scegliere leghe e testate, generare la prima pagina e la sua
+immagine, svuotare la cache — ma le presentano in modo diverso. Qui vive la logica una volta sola: niente stampe,
 niente codici di uscita, niente HTML. Chi chiama riceve dati oppure un
 `ErroreServizio` con un codice stabile, e decide lui come mostrarlo.
 """
@@ -22,7 +21,20 @@ from typing import Callable
 
 import requests
 
-from . import analysis, api, auth, browser, config, gemini, prompt, resoconto, storico, tendenze
+from . import (
+    accesso,
+    analysis,
+    api,
+    auth,
+    browser,
+    config,
+    gemini,
+    impostazioni,
+    prompt,
+    resoconto,
+    storico,
+    tendenze,
+)
 
 MESI = (
     "gennaio febbraio marzo aprile maggio giugno luglio "
@@ -38,19 +50,28 @@ class ErroreServizio(Exception):
     `codice` è stabile e pensato per le macchine: l'interfaccia web lo usa per
     decidere cosa proporre (per esempio il pulsante di rinnovo dei token).
     `uscita` è il codice di uscita della riga di comando: 2 per i problemi di
-    autenticazione (compresa una lega senza token), 1 per tutto il resto, come
-    prima dell'estrazione.
+    autenticazione (compresa una lega senza token e un accesso non riuscito),
+    1 per tutto il resto, come prima dell'estrazione.
     """
 
     STATI_HTTP = {
         "token_mancante": 401,
         "token_scaduto": 401,
+        "accesso_credenziali": 401,
+        "accesso_sessione_scaduta": 401,
+        "accesso_mancante": 409,
+        "accesso_applicazione": 502,
+        "accesso_risposta": 502,
+        "accesso_servizio": 503,
+        "accesso_rete": 503,
+        "impostazioni_non_valide": 400,
         "lega_sconosciuta": 404,
         "competizione_sconosciuta": 404,
         "giornata_non_disponibile": 404,
         "nessuna_competizione": 409,
         "nessuna_giornata": 409,
         "formato_non_supportato": 422,
+        "nessuna_lega": 409,
         "browser": 503,
         "api": 502,
         "rete": 503,
@@ -79,7 +100,8 @@ class ErroreServizio(Exception):
 
     @property
     def uscita(self) -> int:
-        return 2 if self.codice.startswith("token") or self.codice == "lega_sconosciuta" else 1
+        autenticazione = self.codice.startswith(("token", "accesso_")) or self.codice == "lega_sconosciuta"
+        return 2 if autenticazione else 1
 
 
 # --- Date ---------------------------------------------------------------------
@@ -98,7 +120,7 @@ def _traduci(errore: Exception) -> ErroreServizio:
         return errore
     if isinstance(errore, api.TokenScaduto):
         return ErroreServizio(
-            "Il token è scaduto o appartiene a un'altra lega: va rinnovato.",
+            "L'accesso a questa lega non è più valido: entra di nuovo con il tuo account.",
             "token_scaduto",
         )
     if isinstance(errore, api.ApiError):
@@ -110,10 +132,11 @@ def _traduci(errore: Exception) -> ErroreServizio:
         )
     if isinstance(errore, auth.TokenMancante):
         return ErroreServizio(
-            "Nessun token salvato: fai l'accesso su leghe.fantacalcio.it in Chrome e "
-            "rinnova i token.",
+            "Nessun accesso salvato: entra con il tuo account di Leghe Fantacalcio.",
             "token_mancante",
         )
+    if isinstance(errore, accesso.ErroreAccesso):
+        return ErroreServizio(errore.messaggio, f"accesso_{errore.codice}")
     raise errore
 
 
@@ -126,14 +149,18 @@ def _lega(alias: str) -> auth.Lega:
         raise _traduci(auth.TokenMancante())
     if alias not in leghe:
         raise ErroreServizio(
-            f"Nessun token per la lega «{alias}». Se ne fai parte, rinnova i token.",
+            f"Nessun token per la lega «{alias}». Se ne fai parte, aggiorna l'elenco delle leghe.",
             "lega_sconosciuta",
         )
     return leghe[alias]
 
 
-def competizioni(alias: str) -> list[tuple[str, str]]:
-    """(id, nome) delle competizioni di una lega, senza scaricarne i calendari."""
+def competizioni(alias: str, tutte: bool = False) -> list[tuple[str, str]]:
+    """(id, nome) delle competizioni di una lega, senza scaricarne i calendari.
+
+    Per difetto solo quelle che l'utente non ha escluso; `tutte` le restituisce
+    comunque, per chi deve mostrarle tutte e lasciarle scegliere.
+    """
     lega = _lega(alias)
     try:
         trovate = api.competizioni_disponibili(api.Client(lega.token))
@@ -141,7 +168,16 @@ def competizioni(alias: str) -> list[tuple[str, str]]:
         raise _traduci(errore) from errore
     if not trovate:
         raise ErroreServizio(f"{lega.nome} non ha competizioni.", "nessuna_competizione")
-    return trovate
+    if tutte:
+        return trovate
+    scelta = impostazioni.scelta(alias)
+    scelte = [(i, n) for i, n in trovate if scelta.usa_competizione(i)]
+    if not scelte:
+        raise ErroreServizio(
+            f"Hai escluso tutte le competizioni di {lega.nome}: riattivane una fra le tue leghe.",
+            "nessuna_competizione",
+        )
+    return scelte
 
 
 # --- Elenco delle leghe ---------------------------------------------------------
@@ -153,6 +189,7 @@ class StatoCompetizione:
     giornate_calcolate: list[int] = field(default_factory=list)
     supportata: bool | None = None
     errore: str | None = None
+    attiva: bool = True
 
     @property
     def ultima(self) -> int | None:
@@ -167,10 +204,15 @@ class StatoLega:
     competizioni: list[StatoCompetizione] = field(default_factory=list)
     errore: str | None = None
     codice_errore: str | None = None
+    attiva: bool = True
 
 
-def stato_leghe() -> list[StatoLega]:
-    """Tutte le leghe con token, con competizioni e giornate già disputate.
+def stato_leghe(tutte: bool = False) -> list[StatoLega]:
+    """Le leghe con token, con competizioni e giornate già disputate.
+
+    Per difetto solo quelle che l'utente usa: leghe attive e competizioni non
+    escluse, che sono anche le sole di cui si scaricano i calendari. Con
+    `tutte` compaiono anche le altre, segnate come non attive.
 
     Un problema su una singola lega non ferma l'elenco: resta annotato sulla
     lega, così le altre restano utilizzabili.
@@ -182,13 +224,26 @@ def stato_leghe() -> list[StatoLega]:
     if not leghe:
         raise _traduci(auth.TokenMancante())
 
+    scelte = impostazioni.carica()
     risultato: list[StatoLega] = []
     for alias, lega in sorted(leghe.items()):
-        stato = StatoLega(alias=alias, nome=lega.nome, testata=config.testata(alias, lega.nome))
+        scelta = scelte.get(alias, impostazioni.SceltaLega())
+        if not scelta.attiva and not tutte:
+            continue
+        stato = StatoLega(
+            alias=alias,
+            nome=lega.nome,
+            testata=impostazioni.testata(alias, lega.nome),
+            attiva=scelta.attiva,
+        )
         try:
             client = api.Client(lega.token)
             for identificativo, nome in api.competizioni_disponibili(client):
-                voce = StatoCompetizione(id=identificativo, nome=nome)
+                if not scelta.usa_competizione(identificativo) and not tutte:
+                    continue
+                voce = StatoCompetizione(
+                    id=identificativo, nome=nome, attiva=scelta.usa_competizione(identificativo)
+                )
                 try:
                     calendario = client.calendario(identificativo)
                     disputate = analysis.giornate_calcolate(calendario)
@@ -330,7 +385,7 @@ def genera(
 
     tabella = analysis.classifica(calendario_fino_a, nomi_squadre)
     oggi = oggi or date.today()
-    testata = config.testata(lega.alias, lega.nome)
+    testata = impostazioni.testata(lega.alias, lega.nome)
     log(f"testata: {testata}")
 
     # Per difetto il testo è stabile: la stessa giornata dà sempre lo stesso
@@ -363,15 +418,187 @@ def genera(
     )
 
 
-# --- Manutenzione -----------------------------------------------------------------
+# --- Account -----------------------------------------------------------------------
+@dataclass
+class Account:
+    collegato: bool  # ci sono token di lega utilizzabili
+    username: str | None
+    aggiornabile: bool  # c'è l'utente: l'elenco delle leghe si aggiorna senza password
+    leghe: int
+
+
+def stato_account() -> Account:
+    """Chi è entrato e con quante leghe. Mai un token."""
+    utente = auth.carica_utente()
+    try:
+        leghe = auth.carica_leghe()
+    except auth.TokenMancante:
+        leghe = {}
+    return Account(
+        collegato=bool(leghe),
+        username=(utente.username or None) if utente else None,
+        aggiornabile=utente is not None,
+        leghe=len(leghe),
+    )
+
+
+def _salva_accesso(utente: accesso.Utente, leghe: list[accesso.LegaUtente]) -> list[dict]:
+    if not leghe:
+        raise ErroreServizio(
+            "L'accesso è riuscito, ma il tuo account non partecipa a nessuna lega.",
+            "nessuna_lega",
+        )
+    auth.salva_leghe(
+        [{"alias": lega.alias, "nome": lega.nome, "id": lega.id, "token": lega.token} for lega in leghe]
+    )
+    auth.salva_utente(utente)
+    return [{"alias": lega.alias, "nome": lega.nome} for lega in leghe]
+
+
+def accedi(username: str, password: str) -> list[dict]:
+    """Entra con l'account di Leghe Fantacalcio e salva i token delle sue leghe.
+
+    Restituisce alias e nomi, mai i token. La password serve solo alla chiamata
+    di accesso: non viene conservata da nessuna parte.
+    """
+    try:
+        utente, leghe = accesso.accedi(username, password)
+    except accesso.ErroreAccesso as errore:
+        raise _traduci(errore) from None
+    return _salva_accesso(utente, leghe)
+
+
+def aggiorna_leghe() -> list[dict]:
+    """Ritrova le leghe dell'utente, comprese quelle nuove, senza chiedere la password."""
+    utente = auth.carica_utente()
+    if utente is None:
+        raise ErroreServizio(
+            "Per aggiornare l'elenco delle leghe entra con username e password.",
+            "accesso_mancante",
+        )
+    try:
+        nuovo, leghe = accesso.profilo(utente)
+    except accesso.ErroreAccesso as errore:
+        raise _traduci(errore) from None
+    return _salva_accesso(nuovo, leghe)
+
+
+def esci() -> None:
+    """Dimentica utente e token. Le scelte su leghe e testate restano per il prossimo accesso."""
+    auth.cancella_sessione()
+
+
 def rinnova_token() -> list[dict]:
-    """Rilegge i token dal browser e li salva. Restituisce alias e nomi, mai i token."""
+    """Rilegge i token dal Chrome dell'utente e li salva. Restituisce alias e nomi, mai i token.
+
+    È la strada per chi entra nel sito con Google o Facebook e non ha una
+    password. I token arrivano dal browser e non da un accesso: l'utente di un
+    accesso precedente, che potrebbe essere un altro account, si dimentica.
+    """
     try:
         leghe = browser.leggi_leghe()
     except browser.ErroreBrowser as errore:
         raise ErroreServizio(str(errore), "browser") from errore
     auth.salva_leghe(leghe)
+    auth.dimentica_utente()
     return [{"alias": v["alias"], "nome": v["nome"]} for v in sorted(leghe, key=lambda v: v["alias"])]
+
+
+# --- Scelte dell'utente ---------------------------------------------------------------
+@dataclass
+class ImpostazioneCompetizione:
+    id: str
+    nome: str
+    attiva: bool
+
+
+@dataclass
+class ImpostazioneLega:
+    alias: str
+    nome: str
+    attiva: bool
+    testata: str
+    testata_predefinita: str
+    competizioni: list[ImpostazioneCompetizione] = field(default_factory=list)
+    # Le esclusioni salvate: se le competizioni non si caricano, chi salva le
+    # rimanda tali e quali invece di azzerarle.
+    competizioni_escluse: list[str] = field(default_factory=list)
+    errore: str | None = None
+    codice_errore: str | None = None
+
+
+def impostazioni_leghe() -> list[ImpostazioneLega]:
+    """Tutte le leghe dell'utente con le sue scelte, per poterle cambiare."""
+    try:
+        leghe = auth.carica_leghe()
+    except auth.TokenMancante as errore:
+        raise _traduci(errore) from errore
+    if not leghe:
+        raise _traduci(auth.TokenMancante())
+
+    scelte = impostazioni.carica()
+    risultato = []
+    for alias, lega in sorted(leghe.items(), key=lambda voce: voce[1].nome.lower()):
+        scelta = scelte.get(alias, impostazioni.SceltaLega())
+        voce = ImpostazioneLega(
+            alias=alias,
+            nome=lega.nome,
+            attiva=scelta.attiva,
+            testata=scelta.testata,
+            testata_predefinita=impostazioni.testata_predefinita(lega.nome),
+            competizioni_escluse=list(scelta.competizioni_escluse),
+        )
+        try:
+            for identificativo, nome in api.competizioni_disponibili(api.Client(lega.token)):
+                voce.competizioni.append(
+                    ImpostazioneCompetizione(identificativo, nome, scelta.usa_competizione(identificativo))
+                )
+        except (api.ApiError, requests.RequestException) as errore:
+            tradotto = _traduci(errore)
+            voce.errore, voce.codice_errore = tradotto.messaggio, tradotto.codice
+        risultato.append(voce)
+    return risultato
+
+
+def salva_impostazioni(voci: list) -> None:
+    """Salva le scelte inviate, una voce per lega. Solleva ErroreServizio se non tornano.
+
+    Le leghe non nominate conservano le scelte che avevano.
+    """
+    try:
+        leghe = auth.carica_leghe()
+    except auth.TokenMancante as errore:
+        raise _traduci(errore) from errore
+    if not isinstance(voci, list):
+        raise ErroreServizio("Le scelte devono essere un elenco di leghe.", "impostazioni_non_valide")
+
+    scelte = impostazioni.carica()
+    for voce in voci:
+        alias = voce.get("alias") if isinstance(voce, dict) else None
+        if alias not in leghe:
+            raise ErroreServizio("Una delle leghe indicate non è fra le tue.", "impostazioni_non_valide")
+        attiva = voce.get("attiva", True)
+        testata = voce.get("testata", "")
+        escluse = voce.get("competizioni_escluse", [])
+        valide = (
+            isinstance(attiva, bool)
+            and isinstance(testata, str)
+            and isinstance(escluse, list)
+            and all(isinstance(c, (str, int)) and not isinstance(c, bool) for c in escluse)
+        )
+        if not valide:
+            raise ErroreServizio(
+                f"Scelte non valide per «{leghe[alias].nome}».", "impostazioni_non_valide"
+            )
+        scelte[alias] = impostazioni.SceltaLega(
+            attiva=attiva,
+            testata=impostazioni.pulisci_testata(testata),
+            competizioni_escluse=sorted({str(c) for c in escluse}),
+        )
+    impostazioni.salva(scelte)
+
+
+# --- Manutenzione -----------------------------------------------------------------
 
 
 def svuota_cache() -> int:
@@ -417,7 +644,7 @@ def stato_gemini() -> dict:
 
 
 def _nome_file(lega: str, giornata: int | None, seme: int | None, estensione: str) -> str:
-    """fantatana_giornata-03_seme-3_2026-09-15_21-34-05.png
+    """mia-lega_giornata-03_seme-3_2026-09-15_21-34-05.png
 
     Il seme nel nome permette di rigenerare esattamente la stessa pagina.
     """

@@ -4,17 +4,26 @@ Genera la prima pagina di un quotidiano sportivo a partire dall'ultima giornata
 disputata della tua lega su [leghe.fantacalcio.it](https://leghe.fantacalcio.it):
 prima il prompt, poi, se vuoi, l'immagine vera e propria con Gemini.
 
+Funziona con qualunque account: entri con le tue credenziali di Leghe
+Fantacalcio, scegli quali leghe e competizioni usare e dai un nome al giornale
+di ciascuna.
+
 ## Il modo più semplice: la redazione
 
 ```bash
 python app.py
 ```
 
-Si apre il browser su `http://127.0.0.1:8765`. Da lì scegli la lega, la
-competizione e la giornata, generi la prima pagina, ne vedi l'**anteprima
-impaginata**, e con «Genera l'immagine» la mandi a **Gemini**, che la
-restituisce come immagine in 9:16 da guardare, salvare o scaricare. Sempre dalla
-pagina si rinnovano i token e si svuota la cache.
+Si apre il browser su `http://127.0.0.1:8765`. La prima volta chiede di
+**entrare con l'account di Leghe Fantacalcio**, poi mostra **le tue leghe**: scegli
+quali usare, quali competizioni tenere e il nome del giornale di ciascuna (vedi
+[Accesso e scelte](#accesso-e-scelte)).
+
+Da lì in avanti scegli la lega, la competizione e la giornata, generi la prima
+pagina, ne vedi l'**anteprima impaginata**, e con «Genera l'immagine» la mandi a
+**Gemini**, che la restituisce come immagine in 9:16 da guardare, salvare o
+scaricare. In alto a destra «Le tue leghe» riapre le scelte ed «Esci» cancella
+l'accesso da questo computer.
 
 - **Stabile / Nuova versione**: per difetto la stessa giornata dà lo stesso
   testo; «Scrivila diversamente» racconta le stesse notizie con altre parole —
@@ -39,9 +48,10 @@ Tutto ciò che fa la redazione si può fare anche da terminale. Su stdout finisc
 testo-immagine.
 
 ```bash
+python main.py --accedi         # entra con username e password (una volta l'anno)
 python main.py                  # chiede lega e competizione, poi genera
 python main.py --lista          # elenca leghe, competizioni e stato dei dati
-python main.py --lega fantatana # salta le domande
+python main.py --lega mia-lega  # salta le domande
 python main.py > prompt.txt     # il menu resta a schermo, il prompt sul file
 python main.py --verbose        # diagnostica su stderr
 python main.py --giornata 3     # forza una giornata specifica
@@ -51,6 +61,9 @@ python main.py --memoria        # su stderr: cosa ricorda la memoria e cosa usa 
 python main.py --immagine       # genera anche l'immagine e la salva in prime_pagine/
 python main.py --immagine --risoluzione 4K
 python main.py --rigenera-cache # riscarica lo storico da zero
+python main.py --aggiorna-leghe # ritrova le leghe nuove, senza password
+python main.py --imposta-testata mia-lega "Il Corriere del Bar"
+python main.py --esci           # cancella utente e token da questo computer
 ```
 
 Menu e diagnostica passano da **stderr**, il prompt da **stdout**: si può
@@ -61,6 +74,8 @@ fallisce il prompt è già lì, e il percorso dell'immagine salvata va su stderr
 ### Le prove
 
 ```bash
+python test_accesso.py    # accesso: richiesta, risposte, errori, nessuna password salvata
+python test_impostazioni.py # leghe, competizioni e testate scelte dall'utente
 python test_tendenze.py   # memoria storica
 python test_memoria.py    # vista della memoria: ogni richiamo è davvero in pagina
 python test_menu.py       # menu di scelta della riga di comando
@@ -69,7 +84,7 @@ python test_web.py        # interfaccia web: difese, validazione, errori
 python test_gemini.py     # integrazione con Gemini, con risposte simulate
 ```
 
-Nessuna prova usa la rete o Chrome.
+Nessuna prova usa la rete, Chrome o un account vero.
 
 ## Installazione
 
@@ -79,38 +94,105 @@ pip install -r requirements.txt
 
 Le dipendenze sono due: `requests` per l'API e `flask` per la redazione. Anche
 Gemini si chiama con `requests`, senza librerie in più.
-Serve inoltre `browser-harness`, ma solo per rinnovare il token:
+
+`browser-harness` serve solo a chi nel sito entra con Google o Facebook e una
+password non ce l'ha (vedi sotto):
 
 ```bash
 uv tool install --python 3.12 browser-harness
 ```
 
-## Autenticazione
+## Accesso e scelte
 
-L'API usa un **JWT per lega**: non esiste un token che le apra tutte. Il browser
-li tiene pero' tutti insieme, quindi una sola esecuzione li rinnova tutti. Il
-progetto non conosce, non chiede e non salva mai la tua password: copia
-soltanto i token che il browser ha gia' ottenuto dopo un accesso fatto da te.
+### Entrare
+
+Si entra con username (o email) e password di Leghe Fantacalcio, dalla redazione
+o con `python main.py --accedi`. Una sola chiamata, la stessa del sito,
+restituisce l'utente e **tutte le sue leghe**, ciascuna con il proprio token:
+
+    POST https://apileague.fantacalcio.it/onboarding/v1/login
+
+L'API usa infatti un **JWT per lega**: non esiste un token che le apra tutte.
+
+**La password serve solo a quella chiamata**: non viene salvata, stampata,
+registrata né restituita dalla redazione, e il modulo la svuota subito, riuscito
+o no l'accesso. Su disco restano i token, in file esclusi da git:
+
+| File | Contenuto |
+|---|---|
+| `.fanta_leghe.json` | Il token di ogni lega, come mappa `alias -> {nome, id, token}` |
+| `.fanta_utente.json` | Id, nome utente e token dell'utente |
+
+Da terminale la password si scrive senza che compaia a schermo. In Git Bash la
+lettura nascosta può non funzionare: usa PowerShell, il Prompt dei comandi o la
+redazione.
+
+I token durano **un anno**. Con quello dell'utente la redazione rilegge il
+profilo e ritrova le leghe nuove senza chiedere di nuovo la password («Aggiorna
+l'elenco», o `--aggiorna-leghe`). Quando un token scade, la redazione torna al
+modulo di accesso. «Esci» (o `--esci`) cancella entrambi i file; le scelte
+restano per il prossimo accesso.
+
+Il protocollo è stato ricavato dal codice pubblico del sito e verificato sulla
+forma della risposta reale del profilo. **L'accesso con password non è provato
+automaticamente**, perché servirebbe un account vero: le prove usano risposte
+costruite sulla stessa forma.
+
+### Senza password: Google o Facebook
+
+Chi nel sito entra con Google o Facebook non ha una password. Può copiare
+l'accesso dal proprio Chrome: dalla redazione («Nel sito entri con Google o
+Facebook?») o da terminale.
 
 1. Apri Chrome e accedi a `leghe.fantacalcio.it`.
 2. Autorizza il debug remoto su `chrome://inspect/#remote-debugging`
    (spunta "Allow remote debugging for this browser instance").
-3. Esegui:
+3. Premi «Copia l'accesso da Chrome», oppure esegui:
 
 ```bash
 python refresh_token.py
 ```
 
-I token finiscono in `.fanta_leghe.json` (escluso da git) come mappa
-`alias -> {nome, id, token}`. Quando l'API risponde 401 sono semplicemente
-scaduti: rilancia lo script, che li rinnova tutti in un colpo.
+In questo caso i token arrivano dal browser e non c'è un utente salvato:
+«Aggiorna l'elenco» li rilegge da Chrome.
 
-In alternativa se ne puo' passare uno dall'ambiente, utile in CI:
+In alternativa si può passare un token dall'ambiente, utile in CI:
 
 ```bash
 export FANTA_TOKEN="eyJhbGciOi..."
-export FANTA_LEAGUE_ALIAS="fantatana"
+export FANTA_LEAGUE_ALIAS="mia-lega"
 ```
+
+### Scegliere leghe, competizioni e testata
+
+Dopo l'accesso la schermata **Le tue leghe** mostra ogni lega dell'account, con
+le sue competizioni:
+
+- **usa questa lega**: una lega spenta sparisce dalla redazione e dal menu della
+  riga di comando, e non se ne scaricano più i dati;
+- **competizioni**: quelle deselezionate non compaiono, per esempio una Royale,
+  che la redazione non sa raccontare;
+- **nome del giornale**: se resta vuoto vale quello ricavato dal nome della lega,
+  `LA GAZZETTA DI <NOME DELLA LEGA>`.
+
+Le scelte stanno in `.fanta_impostazioni.json`, escluso da git:
+
+```json
+{
+  "leghe": {
+    "mia-lega": {
+      "attiva": true,
+      "testata": "Il Corriere del Bar",
+      "competizioni_escluse": ["12661"]
+    }
+  }
+}
+```
+
+Delle competizioni si ricordano quelle **escluse**, non quelle scelte: una coppa
+creata a metà stagione compare da sola, invece di restare nascosta finché
+qualcuno non se ne accorge. Una lega indicata esplicitamente con `--lega` si
+usa anche se è spenta.
 
 ## L'immagine con Gemini
 
@@ -147,7 +229,7 @@ valida, quota, parametri sbagliati) non costa nulla.
 Ogni immagine generata viene conservata subito in `.cache/immagini/`, anche se
 non la salvi nell'archivio: un'immagine pagata non va persa per un clic mancato.
 «Salva nell'archivio» la copia in **`prime_pagine/`** con un nome che dice
-tutto: `fantatana_giornata-03_seme-7_2026-09-15_21-34-05.png`. Salvare due volte
+tutto: `mia-lega_giornata-03_seme-7_2026-09-15_21-34-05.png`. Salvare due volte
 non duplica, e due omonimi non si sovrascrivono. «Scarica» la passa invece al
 browser, e «Rigenera l'immagine» ne chiede un'altra dallo stesso prompt.
 
@@ -183,8 +265,8 @@ si può ottenere un'immagine vera.
 
 ## Sicurezza della redazione
 
-La redazione gestisce i token delle tue leghe e la chiave di Gemini, quindi
-anche da app locale è costruita con alcune difese:
+La redazione riceve la tua password, conserva i token delle tue leghe e la
+chiave di Gemini, quindi anche da app locale è costruita con alcune difese:
 
 - ascolta **solo su 127.0.0.1**: nessun altro computer della rete la raggiunge;
 - **non parte mai in modalità debug**: il debugger di Werkzeug permetterebbe di
@@ -192,7 +274,11 @@ anche da app locale è costruita con alcune difese:
 - rifiuta richieste con un **Host** diverso da `127.0.0.1` o `localhost`, che
   blocca il DNS rebinding (un dominio esterno fatto risolvere al tuo computer);
 - le richieste che modificano qualcosa devono essere **JSON** e arrivare dalla
-  pagina stessa: un sito esterno aperto nel browser non può inviarle;
+  pagina stessa: un sito esterno aperto nel browser non può inviarle, nemmeno
+  un tentativo di accesso o un'uscita;
+- la **password** non viene salvata né restituita, nemmeno nei messaggi
+  d'errore; l'errore di rete che la conterrebbe nella richiesta non si propaga,
+  e utente e leghe non mostrano i token nemmeno quando finiscono in un log;
 - i **token e la chiave di Gemini non lasciano mai il server**: il rinnovo
   restituisce alias e nomi, lo stato di Gemini dice solo se la chiave c'è;
 - le immagini si recuperano solo con l'identificativo generato dal server, mai
@@ -207,48 +293,51 @@ JavaScript che fallisce se vi ricompare `innerHTML`.
 ## Scelta della lega
 
 Senza argomenti lo script chiede su quale lega lavorare, e poi su quale
-competizione. Si risponde con il numero o con l'alias per esteso; l'invio a
-vuoto sceglie la prima.
+competizione, proponendo solo quelle in uso. Si risponde con il numero o con
+l'alias per esteso; l'invio a vuoto sceglie la prima.
 
 ```
 Per quale lega vuoi generare il prompt?
-  1) FantaTana  (fantatana)
-  2) FANTATANA - Mantra  (fantatana--mantra)
-  3) Madonna Del Pozzo League  (madonna-del-pozzo-league)
-> 3
+  1) Amici di Sempre  (amici-di-sempre)
+  2) Lega del Bar  (lega-del-bar)
+> 2
 ```
 
 Con una sola opzione non chiede nulla. Se nessuno puo' rispondere (pipe, cron)
 prosegue con la prima dichiarandolo su stderr, invece di restare bloccato.
 
-`--lista` mostra dove ci sono davvero dati prima di scegliere:
+`--lista` mostra dove ci sono davvero dati prima di scegliere, comprese leghe e
+competizioni escluse:
 
 ```
-fantatana  (FantaTana)
-    12200    Fanta Campionato 2026-27     1/37 giornate, ultima: 1
-    12661    Fanta Royale 2026-27         1/37 giornate, ultima: 1
-madonna-del-pozzo-league  (Madonna Del Pozzo League)
+amici-di-sempre  (Amici di Sempre)  testata: Il Corriere del Bar
+    12200    Fanta Campionato 2026-27     3/37 giornate, ultima: 3
+    12661    Fanta Royale 2026-27         3/37 giornate, ultima: 3  [esclusa]
+lega-del-bar  (Lega del Bar)  testata: LA GAZZETTA DI LEGA DEL BAR  [non usata]
     462721   Fanta Campionato 2026-27     0/36 giornate - non ancora iniziata
 ```
 
 ## Configurazione
 
-Tutto sovrascrivibile da variabili d'ambiente (vedi `fantatana/config.py`):
+Tutto sovrascrivibile da variabili d'ambiente (vedi `fantamagazine/config.py`):
 
 | Variabile | Default | Significato |
 |---|---|---|
 | `FANTA_LEAGUE_ALIAS` | — | Lega da usare col token d'ambiente |
 | `FANTA_COMPETITION_ID` | — | Competizione; se vuoto viene chiesta |
 | `FANTA_TOKEN` | — | Token singolo, se non si usa il file |
-| `FANTA_LEGHE_FILE` | `.fanta_leghe.json` | Dove stanno i token |
+| `FANTA_LEGHE_FILE` | `.fanta_leghe.json` | Dove stanno i token delle leghe |
+| `FANTA_UTENTE_FILE` | `.fanta_utente.json` | Dove sta il token dell'utente |
+| `FANTA_IMPOSTAZIONI_FILE` | `.fanta_impostazioni.json` | Leghe, competizioni e testate scelte |
+| `FANTA_TESTATA` | — | Forza la testata per ogni lega |
 | `GEMINI_API_KEY` | — | Chiave di Gemini, se non si usa il file |
 | `GEMINI_KEY_FILE` | `.gemini_key` | Dove sta la chiave di Gemini |
 | `GEMINI_MODELLO` | `gemini-3-pro-image` | Modello per le immagini |
 | `GEMINI_TIMEOUT` | `300` | Secondi di attesa massima per un'immagine |
 | `FANTA_ARCHIVIO` | `prime_pagine` | Cartella delle prime pagine salvate |
 
-Leghe e competizioni non sono piu' cablate: vengono scoperte dai token estratti
-e dall'endpoint `/league/competitions`.
+Leghe e competizioni non sono cablate: arrivano dall'accesso dell'utente e
+dall'endpoint `/league/competitions`.
 
 ## Come funziona
 
@@ -262,11 +351,13 @@ web/
   templates/         la pagina
   static/            stile e JavaScript
 main.py              riga di comando
-refresh_token.py     rinnovo dei token da terminale
-fantatana/
+refresh_token.py     accesso copiato da Chrome, per chi non ha una password
+fantamagazine/
   servizio.py        le operazioni, condivise da web e riga di comando
-  config.py          parametri, endpoint e testate
-  auth.py            lettura dei token, header
+  config.py          parametri ed endpoint
+  accesso.py         accesso con username e password, profilo dell'utente
+  auth.py            conservazione dei token, header
+  impostazioni.py    leghe, competizioni e testate scelte dall'utente
   browser.py         lettura dei token dal Chrome dell'utente
   gemini.py          generazione dell'immagine con Gemini
   api.py             client HTTP
@@ -279,10 +370,10 @@ test_*.py            le prove
 ```
 
 Web e riga di comando non contengono logica: entrambe chiamano
-`fantatana/servizio.py`, che restituisce dati oppure un `ErroreServizio` con un
+`fantamagazine/servizio.py`, che restituisce dati oppure un `ErroreServizio` con un
 codice stabile. La riga di comando lo traduce in un messaggio e in un codice di
-uscita, il web in una risposta JSON e, per i problemi di token, nel pulsante di
-rinnovo. Per la stessa lega, giornata e seme i due producono quindi lo stesso
+uscita, il web in una risposta JSON e, per i problemi di token, nel ritorno al
+modulo di accesso. Per la stessa lega, giornata e seme i due producono quindi lo stesso
 prompt, byte per byte: è stato verificato sulle tre leghe e su giornate passate
 confrontando l'output reale, ma non è una prova automatica, perché richiederebbe
 rete e token.
@@ -428,16 +519,14 @@ seme solo:
 
 ### Le testate
 
-Ogni lega ha il suo quotidiano, in `config.TESTATE`:
+Ogni lega ha il suo quotidiano, e il nome lo sceglie l'utente (vedi
+[Scegliere leghe, competizioni e testata](#scegliere-leghe-competizioni-e-testata)).
+Senza una scelta se ne ricava uno dal nome della lega (`LA GAZZETTA DI ...`),
+così una lega nuova non resta senza testata; `FANTA_TESTATA` le forza tutte.
 
-| Lega | Testata |
-|---|---|
-| `fantatana` | LA GAZZETTA DELLA TANA |
-| `madonna-del-pozzo-league` | LA GAZZETTA DEL SAGRATO |
-
-Per una lega senza voce dedicata se ne deriva una dal nome
-(`LA GAZZETTA DI ...`), così una lega nuova non resta senza testata. Si può
-forzare con `FANTA_TESTATA`.
+La testata si usa come è scritta, maiuscole comprese, e l'anteprima la mostra
+allo stesso modo. Va su una riga, fino a 60 caratteri; le virgolette doppie
+diventano semplici, perché nel prompt la testata sta fra virgolette.
 
 ### Lingua
 

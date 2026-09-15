@@ -20,8 +20,8 @@ try:
 except (AttributeError, ValueError):
     pass
 
-from fantatana import config, prompt, tendenze
-from fantatana.analysis import Formazione, Giocatore, Partita, RigaClassifica
+from fantamagazine import prompt, tendenze
+from fantamagazine.analysis import Formazione, Giocatore, Partita, RigaClassifica
 from test_tendenze import _storico_finto
 
 SQUADRE = ["Sfigati FC", "Bomber United", "Muro Difensivo", "Media Mediocre"]
@@ -228,19 +228,9 @@ def test_ce_il_racconto() -> None:
           f"{len(paragrafi[0])} caratteri il principale")
 
 
-def test_testata_per_lega() -> None:
-    assert config.testata("fantatana", "FantaTana") == "LA GAZZETTA DELLA TANA"
-    assert (
-        config.testata("madonna-del-pozzo-league", "Madonna Del Pozzo League")
-        == "LA GAZZETTA DEL SAGRATO"
-    )
-    # Una lega senza voce dedicata deve comunque ottenere un nome sensato.
-    derivata = config.testata("lega-nuova", "Lega Nuova")
-    assert derivata == "LA GAZZETTA DI LEGA NUOVA", derivata
-    print("  ok  ogni lega ha la sua testata, con ripiego per quelle nuove")
-
-
 def test_testata_finisce_in_pagina() -> None:
+    # Le testate scelte dall'utente si provano in test_impostazioni.py: qui
+    # conta che quella ricevuta finisca davvero nel prompt.
     assert "LA GAZZETTA DEL SAGRATO" in _pagina("LA GAZZETTA DEL SAGRATO")
     assert "LA GAZZETTA DELLA TANA" in _pagina("LA GAZZETTA DELLA TANA")
     print("  ok  la testata scelta finisce davvero nel prompt")
@@ -420,7 +410,7 @@ def test_variante_stabile_fra_processi() -> None:
     import subprocess
 
     codice = (
-        "from fantatana import prompt;"
+        "from fantamagazine import prompt;"
         "print(prompt._variante(['alfa','beta','gamma','delta','epsilon'], 12345))"
     )
     esiti = {
@@ -532,7 +522,7 @@ def _giornata_ricca() -> tuple[list[Partita], tendenze.Memoria, dict[str, int], 
     (quelli che richiedono "lo" e "l'"), e una squadra il cui nome inizia per
     vocale, dove "a" seguito dal nome sarebbe un errore.
     """
-    from fantatana.tendenze import Memoria, StoricoSquadra
+    from fantamagazine.tendenze import Memoria, StoricoSquadra
 
     def formazione(nome: str, totale: float, gol: dict[str, int] | None = None,
                    in_campo: int = 11) -> Formazione:
@@ -631,7 +621,7 @@ def test_trafiletti_cambiano_col_seme_ma_non_gli_angoli() -> None:
 
 def test_titoli_cambiano_col_seme() -> None:
     """Il titolo principale varia, e ogni variante dice la stessa cosa."""
-    from fantatana.tendenze import Memoria, StoricoSquadra
+    from fantamagazine.tendenze import Memoria, StoricoSquadra
 
     def squadra(nome: str, totale: float) -> Formazione:
         return Formazione(squadra=nome, modulo=433, totale=totale)

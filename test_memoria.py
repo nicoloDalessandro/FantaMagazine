@@ -19,9 +19,9 @@ try:
 except (AttributeError, ValueError):
     pass
 
-from fantatana import prompt, resoconto, servizio, tendenze
-from fantatana.analysis import Formazione, Giocatore, Partita, RigaClassifica
-from fantatana.tendenze import Memoria, StoricoGiocatore, StoricoSquadra
+from fantamagazine import prompt, resoconto, servizio, tendenze
+from fantamagazine.analysis import Formazione, Giocatore, Partita, RigaClassifica
+from fantamagazine.tendenze import Memoria, StoricoGiocatore, StoricoSquadra
 from test_prompt import _giornata_ricca
 from test_tendenze import _storico_finto
 

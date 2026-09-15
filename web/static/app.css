@@ -112,6 +112,211 @@ body {
   font-size: 0.85rem;
 }
 
+.testata-app__azioni {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px 10px;
+}
+
+.account {
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.85rem;
+  color: var(--inchiostro-2);
+}
+
+/* --- L'accesso -------------------------------------------------------------- */
+.accesso {
+  display: grid;
+  place-items: start center;
+  padding: clamp(24px, 6vw, 72px) clamp(16px, 3vw, 32px);
+}
+
+.accesso__scheda {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  max-width: 440px;
+  padding: clamp(20px, 4vw, 32px);
+  background: var(--pannello);
+  border: 1px solid var(--filetto);
+  border-radius: 12px;
+  box-shadow: var(--ombra);
+}
+
+.accesso__titolo {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: clamp(1.7rem, 4vw, 2.2rem);
+  line-height: 1.1;
+}
+
+.accesso__titolo:focus,
+.impostazioni__titolo:focus {
+  outline: none;
+}
+
+.accesso__intro {
+  margin: 0;
+  color: var(--inchiostro-2);
+}
+
+.accesso__modulo {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 4px;
+}
+
+.accesso__errore {
+  margin: 0;
+  padding: 9px 12px;
+  border: 1px solid var(--rosso);
+  border-radius: 6px;
+  background: var(--rosso-tenue);
+  font-size: 0.88rem;
+}
+
+.accesso__privacy {
+  padding-top: 12px;
+  border-top: 1px solid var(--filetto);
+}
+
+.accesso__alternativa[open] {
+  gap: 10px;
+}
+
+.accesso__alternativa .pulsante {
+  align-self: flex-start;
+}
+
+/* --- Le tue leghe ------------------------------------------------------------ */
+.impostazioni {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: clamp(16px, 3vw, 32px);
+}
+
+.impostazioni__testa {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px 24px;
+}
+
+.impostazioni__testa > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 60ch;
+}
+
+.impostazioni__titolo {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: clamp(1.6rem, 3.5vw, 2.1rem);
+  line-height: 1.1;
+}
+
+.impostazioni__elenco {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr));
+  gap: 14px;
+}
+
+.impostazioni__elenco > .nota,
+.impostazioni__elenco > .nota-errore {
+  grid-column: 1 / -1;
+}
+
+.impostazioni .nota-errore {
+  color: var(--rosso);
+  font-size: 0.85rem;
+}
+
+.impostazioni__azioni {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-top: 16px;
+  border-top: 1px solid var(--filetto);
+}
+
+.scelta-lega {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  margin: 0;
+  padding: 14px 16px 16px;
+  background: var(--pannello);
+  border: 1px solid var(--filetto);
+  border-radius: 10px;
+  transition: opacity 120ms ease, border-color 120ms ease;
+}
+
+.scelta-lega:has(.scelta-lega__attiva:checked) {
+  border-color: var(--inchiostro-3);
+}
+
+/* Una lega non usata resta leggibile, ma si capisce subito che è spenta. */
+.scelta-lega--spenta {
+  background: transparent;
+}
+
+.scelta-lega--spenta .gruppo {
+  opacity: 0.5;
+}
+
+.scelta-lega__testa {
+  float: left;
+  width: 100%;
+  padding: 0;
+}
+
+.scelta-lega__testa + * {
+  clear: both;
+}
+
+.scelta-lega__nome {
+  font-weight: 700;
+  font-size: 1.02rem;
+}
+
+.scelta-lega__competizioni {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.casella {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.casella input {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  margin: 3px 0 0;
+  accent-color: var(--rosso);
+}
+
+.casella input:disabled + span {
+  cursor: not-allowed;
+}
+
 .avviso-globale {
   margin: 12px clamp(16px, 3vw, 32px) 0;
   padding: 10px 14px;
@@ -264,7 +469,9 @@ body {
 
 select,
 input[type="number"],
-input[type="search"] {
+input[type="search"],
+input[type="text"],
+input[type="password"] {
   width: 100%;
   padding: 8px 10px;
   font: inherit;
@@ -277,6 +484,13 @@ input[type="search"] {
 select:disabled {
   color: var(--inchiostro-3);
   cursor: not-allowed;
+}
+
+/* Un suggerimento non deve sembrare un valore già scritto. */
+input::placeholder {
+  color: var(--inchiostro-3);
+  font-style: italic;
+  opacity: 1;
 }
 
 .segmenti {
@@ -985,7 +1199,8 @@ a.pulsante[aria-disabled="true"] {
   font-weight: 700;
   line-height: 1;
   letter-spacing: -0.015em;
-  text-transform: uppercase;
+  /* Niente maiuscolo forzato: la testata la sceglie l'utente, e l'anteprima la
+     mostra come finirà nel prompt. */
   padding-bottom: 10px;
   border-bottom: 3px double var(--inchiostro);
   text-wrap: balance;

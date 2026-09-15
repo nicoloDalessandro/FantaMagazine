@@ -2,8 +2,16 @@
 credentials
 .fanta_token
 .fanta_leghe.json
+.fanta_utente.json
+*.json.tmp
 .gemini_key
 .env
+
+# Scelte personali: leghe, competizioni e testate di chi usa l'app
+.fanta_impostazioni.json
+
+# Configurazione locale degli strumenti, con percorsi di questo computer
+.claude/
 
 # Cache dello storico e bozze delle immagini (rigenerabili)
 .cache/

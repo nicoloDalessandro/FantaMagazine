@@ -5,9 +5,9 @@
     python app.py --no-browser    # senza aprire il browser
 
 Il server ascolta solo su 127.0.0.1: è raggiungibile da questo computer e da
-nessun altro. Gestisce i token delle tue leghe, quindi non va mai esposto in
-rete né avviato in modalità debug (il debugger di Werkzeug permette di eseguire
-codice arbitrario dal browser).
+nessun altro. Riceve la tua password per l'accesso e conserva i token delle tue
+leghe, quindi non va mai esposto in rete né avviato in modalità debug (il
+debugger di Werkzeug permette di eseguire codice arbitrario dal browser).
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ from pathlib import Path
 from flask import Flask, jsonify, render_template, request, send_file
 from werkzeug.exceptions import HTTPException
 
-from fantatana import gemini, servizio
+from fantamagazine import gemini, servizio
 
 RADICE = Path(__file__).resolve().parent
 INDIRIZZO = "127.0.0.1"
@@ -80,6 +80,44 @@ def crea_app() -> Flask:
     @app.get("/")
     def indice():
         return render_template("index.html")
+
+    # --- Account ---------------------------------------------------------------
+    @app.get("/api/account")
+    def account():
+        # Chi è entrato e con quante leghe: mai un token.
+        return jsonify(asdict(servizio.stato_account()))
+
+    @app.post("/api/accesso")
+    def entra():
+        dati = _oggetto(request.get_json(silent=True))
+        utente, password = dati.get("utente"), dati.get("password")
+        # La password non si ripulisce dagli spazi: possono farne parte. E non
+        # compare in nessuna risposta, nemmeno negli errori.
+        if not isinstance(utente, str) or not utente.strip() or not isinstance(password, str) or not password:
+            return _errore("Inserisci username e password.", "parametri", 400)
+        if len(utente) > 200 or len(password) > 200:
+            return _errore("Username o password troppo lunghi.", "parametri", 400)
+        leghe = servizio.accedi(utente, password)
+        return jsonify({"leghe": leghe, "account": asdict(servizio.stato_account())})
+
+    @app.post("/api/leghe/aggiorna")
+    def aggiorna_leghe():
+        leghe = servizio.aggiorna_leghe()
+        return jsonify({"leghe": leghe, "account": asdict(servizio.stato_account())})
+
+    @app.post("/api/esci")
+    def esci():
+        servizio.esci()
+        return jsonify(asdict(servizio.stato_account()))
+
+    @app.get("/api/impostazioni")
+    def impostazioni():
+        return jsonify([asdict(voce) for voce in servizio.impostazioni_leghe()])
+
+    @app.post("/api/impostazioni")
+    def salva_impostazioni():
+        servizio.salva_impostazioni(_oggetto(request.get_json(silent=True)).get("leghe"))
+        return jsonify({"salvate": True})
 
     # --- API -------------------------------------------------------------------
     @app.get("/api/leghe")
@@ -246,6 +284,11 @@ def _bozza_json(bozza: servizio.Bozza) -> dict:
 
 def _errore(messaggio: str, codice: str, stato: int):
     return jsonify({"errore": messaggio, "codice": codice}), stato
+
+
+def _oggetto(dati) -> dict:
+    """Il corpo JSON solo se è un oggetto: un elenco o un numero valgono come vuoto."""
+    return dati if isinstance(dati, dict) else {}
 
 
 def _testo(dati: dict, chiave: str) -> str:

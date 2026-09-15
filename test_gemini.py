@@ -26,7 +26,7 @@ except (AttributeError, ValueError):
 
 import requests
 
-from fantatana import config, gemini, servizio
+from fantamagazine import config, gemini, servizio
 
 CHIAVE_FINTA = "CHIAVE-DI-PROVA-segretissima-123"
 

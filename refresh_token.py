@@ -1,8 +1,9 @@
 """Estrae i token di tutte le tue leghe dal Chrome in cui hai già fatto il login.
 
-Ogni lega ha il proprio JWT, con scadenza. Il browser li tiene tutti insieme,
-quindi una sola esecuzione li rinnova tutti. Nessuna password viene mai letta,
-richiesta o salvata.
+La strada normale è entrare con username e password (python main.py --accedi).
+Questa serve a chi nel sito entra con Google o Facebook e una password non ce
+l'ha: si copiano i token che il browser ha già ottenuto. Nessuna password viene
+letta, richiesta o salvata.
 
 Prerequisiti:
   - browser-harness installato   (uv tool install --python 3.12 browser-harness)
@@ -18,7 +19,7 @@ from __future__ import annotations
 
 import sys
 
-from fantatana import auth, browser, config
+from fantamagazine import auth, browser, config
 
 
 def main() -> int:

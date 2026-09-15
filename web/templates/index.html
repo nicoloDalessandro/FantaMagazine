@@ -13,14 +13,82 @@
       <span class="marchio">Redazione</span>
       <span class="sottotitolo-app">Prime pagine dal fantacalcio</span>
     </div>
-    <div class="testata-app__azioni">
-      <button type="button" class="pulsante pulsante--leggero" id="rinnova-token">Rinnova token</button>
+    <div class="testata-app__azioni" id="barra-account" hidden>
+      <span class="account" id="account-nome"></span>
+      <button type="button" class="pulsante pulsante--leggero" id="apri-leghe">Le tue leghe</button>
+      <button type="button" class="pulsante pulsante--leggero" id="esci">Esci</button>
     </div>
   </header>
 
   <div class="avviso-globale" id="avviso-globale" role="status" aria-live="polite" hidden></div>
 
-  <main class="impaginato">
+  <!-- L'accesso ------------------------------------------------------------------>
+  <main class="accesso" id="schermata-accesso" hidden>
+    <section class="accesso__scheda" aria-labelledby="titolo-accesso">
+      <p class="occhiello">Leghe Fantacalcio</p>
+      <h1 class="accesso__titolo" id="titolo-accesso" tabindex="-1">Entra nella redazione</h1>
+      <p class="accesso__intro">
+        Accedi con il tuo account di Leghe Fantacalcio: la redazione ritrova le tue leghe e
+        ne racconta le giornate in prima pagina.
+      </p>
+
+      <form class="accesso__modulo" id="modulo-accesso" novalidate>
+        <label class="gruppo">
+          <span class="gruppo__titolo">Username o email</span>
+          <input type="text" id="accesso-utente" name="username" autocomplete="username"
+                 autocapitalize="none" spellcheck="false" maxlength="200" required>
+        </label>
+        <label class="gruppo">
+          <span class="gruppo__titolo">Password</span>
+          <input type="password" id="accesso-password" name="password"
+                 autocomplete="current-password" maxlength="200" required>
+        </label>
+        <p class="accesso__errore" id="errore-accesso" role="alert" hidden></p>
+        <button type="submit" class="pulsante pulsante--primario" id="entra">Accedi</button>
+      </form>
+
+      <p class="nota accesso__privacy">
+        La password serve solo a questo accesso e non viene salvata. Sul computer restano i
+        token delle tue leghe, validi un anno, in un file che non lascia mai questa cartella.
+      </p>
+
+      <details class="dettagli accesso__alternativa">
+        <summary>Nel sito entri con Google o Facebook?</summary>
+        <p class="nota">
+          Senza una password puoi copiare l'accesso dal tuo Chrome: entra in
+          leghe.fantacalcio.it, autorizza il debug remoto su chrome://inspect/#remote-debugging
+          e premi il pulsante.
+        </p>
+        <button type="button" class="pulsante pulsante--leggero" id="accesso-chrome">
+          Copia l'accesso da Chrome
+        </button>
+      </details>
+    </section>
+  </main>
+
+  <!-- Le tue leghe ---------------------------------------------------------------->
+  <main class="impostazioni" id="schermata-leghe" hidden>
+    <div class="impostazioni__testa">
+      <div>
+        <h1 class="impostazioni__titolo" id="titolo-leghe" tabindex="-1">Le tue leghe</h1>
+        <p class="nota">
+          Scegli quali leghe e competizioni usare nella redazione, e dai un nome al giornale di
+          ciascuna lega.
+        </p>
+      </div>
+      <button type="button" class="pulsante pulsante--leggero" id="aggiorna-leghe">Aggiorna l'elenco</button>
+    </div>
+
+    <div class="impostazioni__elenco" id="elenco-leghe" aria-busy="true"></div>
+
+    <div class="impostazioni__azioni">
+      <button type="button" class="pulsante pulsante--primario" id="salva-leghe">Salva e apri la redazione</button>
+      <button type="button" class="pulsante pulsante--leggero" id="annulla-leghe">Torna alla redazione</button>
+    </div>
+  </main>
+
+  <!-- La redazione ---------------------------------------------------------------->
+  <main class="impaginato" id="schermata-redazione" hidden>
     <!-- La scrivania: le scelte ---------------------------------------------->
     <section class="scrivania" aria-labelledby="titolo-scrivania">
       <h2 id="titolo-scrivania" class="occhiello">La scrivania</h2>

@@ -4,8 +4,9 @@ Se la lega non viene indicata, lo script la chiede. Su stdout finisce
 esclusivamente il prompt, così è incollabile o reindirizzabile: il menu e ogni
 diagnostica passano da stderr.
 
+    python main.py --accedi                 # entra con il tuo account (una volta l'anno)
     python main.py                          # chiede quale lega
-    python main.py --lega fantatana         # senza domande
+    python main.py --lega la-mia-lega       # senza domande
     python main.py --lista                  # elenca leghe e competizioni
     python main.py > prompt.txt             # il menu resta visibile a schermo
     python main.py --verbose                # diagnostica su stderr
@@ -21,9 +22,10 @@ Per un'interfaccia grafica:  python app.py
 from __future__ import annotations
 
 import argparse
+import getpass
 import sys
 
-from fantatana import auth, gemini, servizio
+from fantamagazine import auth, gemini, impostazioni, servizio
 
 # Il prompt contiene accenti italiani: senza questo, su una console Windows con
 # code page legacy l'output verrebbe mutilato.
@@ -36,9 +38,12 @@ for flusso in (sys.stdout, sys.stderr):
 # Suggerimenti specifici della riga di comando. Il servizio spiega il problema;
 # come risolverlo dipende da dove lo si legge (qui un comando, sul web un pulsante).
 SUGGERIMENTI = {
-    "token_mancante": "Rigenera i token con:  python refresh_token.py",
-    "token_scaduto": "Rigenera i token con:  python refresh_token.py",
-    "lega_sconosciuta": "Rigenera i token con:  python refresh_token.py",
+    "token_mancante": "Entra con:  python main.py --accedi",
+    "token_scaduto": "Entra di nuovo con:  python main.py --accedi",
+    "accesso_sessione_scaduta": "Entra di nuovo con:  python main.py --accedi",
+    "accesso_mancante": "Entra con:  python main.py --accedi",
+    "lega_sconosciuta": "Aggiorna l'elenco con:  python main.py --aggiorna-leghe",
+    "browser": "In alternativa entra con username e password:  python main.py --accedi",
     "nessuna_giornata": "Vedi quali competizioni hanno dati con:  python main.py --lista",
     "competizione_sconosciuta": "Vedi le competizioni disponibili con:  python main.py --lista",
     "gemini_quota": "Attiva la fatturazione sul progetto della chiave:  https://aistudio.google.com/apikey",
@@ -98,9 +103,10 @@ def _chiedi(voci: list[tuple[str, str]], domanda: str) -> str:
 
 
 def _elenca() -> int:
-    """Elenca leghe, competizioni e quante giornate hanno già dati."""
-    for lega in servizio.stato_leghe():
-        print(f"{lega.alias}  ({lega.nome})")
+    """Elenca leghe, competizioni e quante giornate hanno già dati, anche quelle escluse."""
+    for lega in servizio.stato_leghe(tutte=True):
+        esclusa = "" if lega.attiva else "  [non usata]"
+        print(f"{lega.alias}  ({lega.nome})  testata: {lega.testata}{esclusa}")
         if lega.errore:
             print(f"    [non raggiungibile: {lega.errore}]")
             continue
@@ -114,7 +120,55 @@ def _elenca() -> int:
                 )
             else:
                 stato = f"0/{voce.giornate_totali} giornate - non ancora iniziata"
+            if not voce.attiva:
+                stato += "  [esclusa]"
             print(f"    {voce.id:<8} {voce.nome:<28} {stato}")
+    return 0
+
+
+def _accedi() -> int:
+    """Chiede username e password e salva i token. La password non si vede e non si salva."""
+    print("Accesso a Leghe Fantacalcio. La password serve solo ora: non viene salvata.", file=sys.stderr)
+    try:
+        print("Username o email: ", end="", file=sys.stderr, flush=True)
+        username = input().strip()
+        password = getpass.getpass("Password: ", stream=sys.stderr)
+    except (EOFError, KeyboardInterrupt):
+        print("\nAccesso annullato.", file=sys.stderr)
+        return 130
+    leghe = servizio.accedi(username, password)
+    del password
+    print(f"\nAccesso riuscito: {len(leghe)} {'lega' if len(leghe) == 1 else 'leghe'}.", file=sys.stderr)
+    for voce in leghe:
+        print(f"  {voce['alias']:<28} {voce['nome']}", file=sys.stderr)
+    print(
+        "\nPer scegliere leghe, competizioni e nome del giornale apri la redazione "
+        "(python app.py) oppure usa --imposta-testata.",
+        file=sys.stderr,
+    )
+    return 0
+
+
+def _aggiorna_leghe() -> int:
+    leghe = servizio.aggiorna_leghe()
+    print(f"Elenco aggiornato: {len(leghe)} {'lega' if len(leghe) == 1 else 'leghe'}.", file=sys.stderr)
+    for voce in leghe:
+        print(f"  {voce['alias']:<28} {voce['nome']}", file=sys.stderr)
+    return 0
+
+
+def _imposta_testata(alias: str, testo: str) -> int:
+    leghe = auth.carica_leghe()
+    if alias not in leghe:
+        raise servizio.ErroreServizio(f"Nessuna lega «{alias}» fra le tue.", "lega_sconosciuta")
+    scelta = impostazioni.scelta(alias)
+    servizio.salva_impostazioni([{
+        "alias": alias,
+        "attiva": scelta.attiva,
+        "testata": testo,
+        "competizioni_escluse": scelta.competizioni_escluse,
+    }])
+    print(f"Testata di {leghe[alias].nome}: {impostazioni.testata(alias, leghe[alias].nome)}", file=sys.stderr)
     return 0
 
 
@@ -213,11 +267,22 @@ def _esegui(argomenti: argparse.Namespace) -> int:
         if loud or sempre:
             print(messaggio, file=sys.stderr)
 
+    if argomenti.accedi:
+        return _accedi()
+    if argomenti.esci:
+        servizio.esci()
+        print("Accesso dimenticato: utente e token cancellati da questo computer.", file=sys.stderr)
+        return 0
+    if argomenti.aggiorna_leghe:
+        return _aggiorna_leghe()
+    if argomenti.imposta_testata:
+        return _imposta_testata(*argomenti.imposta_testata)
     if argomenti.lista:
         return _elenca()
 
     # --- Scelta della lega -------------------------------------------------
     if argomenti.lega:
+        # Una lega indicata per nome si usa anche se nel menu è esclusa.
         alias = argomenti.lega
     else:
         try:
@@ -225,10 +290,18 @@ def _esegui(argomenti: argparse.Namespace) -> int:
         except auth.TokenMancante as errore:
             raise servizio.ErroreServizio(str(errore), "token_mancante") from errore
         if not leghe:
-            raise servizio.ErroreServizio("Nessun token trovato.", "token_mancante")
-        voci = [(a, f"{l.nome}  ({a})") for a, l in sorted(leghe.items())]
+            raise servizio.ErroreServizio("Nessun accesso salvato.", "token_mancante")
+        scelte = impostazioni.carica()
+        attive = {a: l for a, l in leghe.items() if scelte.get(a, impostazioni.SceltaLega()).attiva}
+        if not attive:
+            raise servizio.ErroreServizio(
+                "Hai escluso tutte le tue leghe: riattivane una nella redazione, "
+                "oppure indicala con --lega.",
+                "nessuna_lega",
+            )
+        voci = [(a, f"{l.nome}  ({a})") for a, l in sorted(attive.items())]
         alias = _chiedi(voci, "Per quale lega vuoi generare il prompt?")
-        log(f"lega: {leghe[alias].nome} [{alias}]", sempre=True)
+        log(f"lega: {attive[alias].nome} [{alias}]", sempre=True)
 
     if argomenti.rigenera_cache:
         log(f"cache svuotata: {servizio.svuota_cache()} file", sempre=True)
@@ -285,7 +358,21 @@ def _esegui(argomenti: argparse.Namespace) -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    account = parser.add_argument_group("account")
+    account.add_argument(
+        "--accedi", action="store_true",
+        help="Entra con username e password di Leghe Fantacalcio (la password non viene salvata)",
+    )
+    account.add_argument(
+        "--aggiorna-leghe", action="store_true",
+        help="Ritrova le tue leghe, anche quelle nuove, senza chiedere la password",
+    )
+    account.add_argument("--esci", action="store_true", help="Cancella utente e token da questo computer")
+    account.add_argument(
+        "--imposta-testata", nargs=2, metavar=("ALIAS", "TESTATA"),
+        help="Dà un nome al giornale di una lega (vuoto per tornare a quello predefinito)",
+    )
     parser.add_argument("--lega", help="Alias della lega (salta la domanda)")
     parser.add_argument("--competizione", help="Id della competizione (salta la domanda)")
     parser.add_argument("--lista", action="store_true", help="Elenca leghe e competizioni")
