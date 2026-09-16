@@ -17,7 +17,7 @@ di ciascuna.
 Si usa in due modi: **scaricando l'eseguibile per Windows**, se vuoi soltanto
 vedere la tua prima pagina, o **dal codice sorgente**, se vuoi metterci mano.
 
-## Windows: scarica ed esegui
+## Windows: scarica ed esegui!
 
 Chi non ha Python e non vuole installarlo può prendere l'ultima versione dalla
 pagina [Releases](../../releases) del progetto:
