@@ -30,6 +30,7 @@ from . import (
     config,
     gemini,
     impostazioni,
+    listone,
     prompt,
     resoconto,
     storico,
@@ -345,7 +346,7 @@ def genera(
             bersaglio = analysis.ultima_giornata(calendario)
 
         nomi_squadre = {s["id"]: s["n"].strip() for s in client.squadre()}
-        nomi_giocatori = {g["id"]: (g["name"], g.get("stnme", "")) for g in client.giocatori()}
+        nomi_giocatori = listone.carica(client, lega.alias, usa_cache=usa_cache, su_log=log)
         log(f"{len(nomi_squadre)} squadre, {len(nomi_giocatori)} giocatori")
 
         # Lo storico si ferma alla giornata analizzata: una giornata passata
@@ -368,6 +369,30 @@ def genera(
             su_avviso=avvisa,
             su_progresso=lambda n: log(f"  giornata {n}"),
         )
+
+        # Un giocatore arrivato dal mercato non è nel listone salvato, e in
+        # pagina comparirebbe col suo codice: lo si riscarica una volta sola, e
+        # le formazioni si rileggono dalla cache senza altre chiamate.
+        mancanti = listone.codici_sconosciuti(completo)
+        if mancanti and usa_cache and not mancanti <= listone.irrisolti(lega.alias):
+            log(f"listone da aggiornare: {len(mancanti)} giocatori sconosciuti")
+            nomi_giocatori = listone.carica(client, lega.alias, usa_cache=False, su_log=log)
+            completo = storico.carica_storico(
+                client,
+                competizione,
+                calendario_fino_a,
+                nomi_squadre,
+                nomi_giocatori,
+                usa_cache=usa_cache,
+                su_avviso=avvisa,
+            )
+            # Chi non c'è nemmeno nel listone fresco (un ceduto all'estero, per
+            # dire) resta senza nome: si annota, o lo si andrebbe a ricercare a
+            # ogni generazione.
+            ancora = listone.codici_sconosciuti(completo)
+            if ancora:
+                listone.segna_irrisolti(lega.alias, ancora)
+                log(f"  {len(ancora)} giocatori sconosciuti anche al listone aggiornato")
     except ErroreServizio:
         raise
     except (api.ApiError, requests.RequestException, auth.TokenMancante) as errore:
@@ -603,6 +628,16 @@ def salva_impostazioni(voci: list) -> None:
 
 def svuota_cache() -> int:
     return storico.svuota_cache()
+
+
+def aggiorna_listone(alias: str) -> int:
+    """Riscarica il listone di una lega. Restituisce quanti giocatori conosce ora."""
+    lega = _lega(alias)
+    try:
+        nomi = listone.carica(api.Client(lega.token), lega.alias, usa_cache=False)
+    except (api.ApiError, requests.RequestException) as errore:
+        raise _traduci(errore) from errore
+    return len(nomi)
 
 
 # --- Immagini con Gemini ----------------------------------------------------------

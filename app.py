@@ -238,6 +238,15 @@ def crea_app() -> Flask:
     def cache():
         return jsonify({"rimossi": servizio.svuota_cache()})
 
+    @app.post("/api/listone")
+    def listone():
+        dati = _oggetto(request.get_json(silent=True))
+        try:
+            lega = _testo(dati, "lega")
+        except ValueError as errore:
+            return _errore(str(errore), "parametri", 400)
+        return jsonify({"giocatori": servizio.aggiorna_listone(lega)})
+
     # --- Errori ----------------------------------------------------------------
     @app.errorhandler(servizio.ErroreServizio)
     def errore_servizio(errore: servizio.ErroreServizio):

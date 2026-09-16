@@ -20,6 +20,7 @@
     notaScrittura: $("nota-scrittura"),
     genera: $("genera"),
     svuotaCache: $("svuota-cache"),
+    aggiornaListone: $("aggiorna-listone"),
     barraAccount: $("barra-account"),
     accountNome: $("account-nome"),
     apriLeghe: $("apri-leghe"),
@@ -208,6 +209,7 @@
     nodi.altraVersione.disabled = stato.occupato;
     nodi.copia.disabled = stato.occupato;
     nodi.svuotaCache.disabled = stato.occupato;
+    nodi.aggiornaListone.disabled = stato.occupato || !legaCorrente();
     for (const pulsante of [nodi.entra, nodi.accessoChrome, nodi.apriLeghe, nodi.esci, nodi.aggiornaLeghe, nodi.annullaLeghe]) {
       pulsante.disabled = stato.occupato;
     }
@@ -1421,6 +1423,21 @@
     if (!stato.leghe.length) caricaLeghe();
   }
 
+  async function aggiornaListone() {
+    const lega = legaCorrente();
+    if (!lega || stato.occupato) return;
+    impostaOccupato(true);
+    mostraAvviso(`Riscarico il listone di ${lega.nome}: qualche secondo.`);
+    try {
+      const dati = await chiama("/api/listone", { metodo: "POST", corpo: { lega: lega.alias } });
+      mostraAvviso(`Listone di ${lega.nome} aggiornato: ${dati.giocatori} giocatori.`, "ok");
+    } catch (errore) {
+      mostraAvviso(errore.message, "errore");
+    } finally {
+      impostaOccupato(false);
+    }
+  }
+
   async function svuotaCache() {
     if (stato.occupato) return;
     impostaOccupato(true);
@@ -1452,6 +1469,7 @@
     nodi.altraVersione.addEventListener("click", () => genera({ nuovaVersione: true }));
     nodi.copia.addEventListener("click", copia);
     nodi.svuotaCache.addEventListener("click", svuotaCache);
+    nodi.aggiornaListone.addEventListener("click", aggiornaListone);
     nodi.moduloAccesso.addEventListener("submit", entra);
     nodi.accessoChrome.addEventListener("click", accessoChrome);
     nodi.apriLeghe.addEventListener("click", apriImpostazioni);

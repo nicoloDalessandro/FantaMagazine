@@ -61,6 +61,7 @@ python main.py --memoria        # su stderr: cosa ricorda la memoria e cosa usa 
 python main.py --immagine       # genera anche l'immagine e la salva in prime_pagine/
 python main.py --immagine --risoluzione 4K
 python main.py --rigenera-cache # riscarica lo storico da zero
+python main.py --rigenera-listone # riscarica il listone dei giocatori
 python main.py --aggiorna-leghe # ritrova le leghe nuove, senza password
 python main.py --imposta-testata mia-lega "Il Corriere del Bar"
 python main.py --esci           # cancella utente e token da questo computer
@@ -76,6 +77,7 @@ fallisce il prompt è già lì, e il percorso dell'immagine salvata va su stderr
 ```bash
 python test_accesso.py    # accesso: richiesta, risposte, errori, nessuna password salvata
 python test_impostazioni.py # leghe, competizioni e testate scelte dall'utente
+python test_listone.py    # cache del listone e ricarico automatico
 python test_tendenze.py   # memoria storica
 python test_memoria.py    # vista della memoria: ogni richiamo è davvero in pagina
 python test_menu.py       # menu di scelta della riga di comando
@@ -88,12 +90,42 @@ Nessuna prova usa la rete, Chrome o un account vero.
 
 ## Installazione
 
+Serve Python 3.9 o più recente (qui è provato su 3.12). Dalla cartella del
+progetto, una volta sola, si crea l'ambiente virtuale:
+
+```bash
+python -m venv .venv
+```
+
+Poi lo si attiva — su Windows con PowerShell:
+
+```bash
+.\.venv\Scripts\Activate.ps1
+```
+
+con il Prompt dei comandi `.venv\Scripts\activate.bat`, su Mac e Linux
+`source .venv/bin/activate` — e si installano le dipendenze:
+
 ```bash
 pip install -r requirements.txt
 ```
 
 Le dipendenze sono due: `requests` per l'API e `flask` per la redazione. Anche
 Gemini si chiama con `requests`, senza librerie in più.
+
+**L'ambiente virtuale non sta in git**, quindi dopo un `git clone` su un altro
+computer va rifatto: senza, il primo avvio finisce con
+`ModuleNotFoundError: No module named 'flask'`. Se PowerShell rifiuta di
+attivarlo per via delle policy, si può usare direttamente il suo Python:
+
+```bash
+.venv\Scripts\python.exe app.py
+```
+
+Dal repository non arrivano nemmeno l'accesso alle leghe, le scelte su leghe e
+testate, la chiave di Gemini e la cache: l'accesso si rifà dalla redazione, le
+scelte si rifanno o si copiano da `.fanta_impostazioni.json`, la chiave si
+ricopia in `.gemini_key` e la cache si ricostruisce da sola.
 
 `browser-harness` serve solo a chi nel sito entra con Google o Facebook e una
 password non ce l'ha (vedi sotto):
@@ -363,6 +395,7 @@ fantamagazine/
   api.py             client HTTP
   analysis.py        ricostruzione formazioni, classifica
   storico.py         cache su disco delle giornate passate
+  listone.py         cache dei nomi dei giocatori
   tendenze.py        memoria: strisce e ricorrenze
   resoconto.py       che cosa ricorda la memoria e che cosa usa la pagina
   prompt.py          la pagina come dati, poi come prompt
@@ -622,16 +655,31 @@ automatica, perché i casi reali richiedono rete e token.
 
 ### Perche' esiste una cache
 
-Il calendario arriva in una richiesta, le formazioni no: cinque per giornata. A
-fine stagione sarebbero quasi duecento richieste a ogni esecuzione, per dati
-ormai immutabili. Le giornate gia' calcolate finiscono quindi in
-`.cache/giornate/` e vengono rilette.
+Il calendario arriva in una richiesta, le formazioni no: una per partita per
+giornata, cinque in una lega da dieci squadre. A fine stagione sarebbero quasi
+duecento richieste a ogni esecuzione, per dati ormai immutabili. Le giornate
+gia' calcolate finiscono quindi in `.cache/giornate/` e vengono rilette: la
+giornata nuova costa cinque richieste la prima volta e nessuna dopo.
 
-Se un amministratore rettifica dei punti a posteriori, la cache va invalidata:
+In cache sta anche il **listone dei giocatori**, che serve solo a tradurre il
+codice di un giocatore nel suo nome. È la risposta più pesante dell'API e
+cambia di rado, quindi se ne conserva la sola mappa dei nomi in
+`.cache/listone/`: 17 KB invece di 400. Sulla lega di prova, una generazione è
+passata da 4 richieste e 435 KB a 3 richieste e 35 KB.
+
+Il listone si riscarica da solo quando in una formazione compare un giocatore
+che non conosce — chi arriva dal mercato — così in pagina non finisce mai un
+codice al posto del nome. Chi resta senza nome anche dopo, come un ceduto
+all'estero che compare solo nelle giornate vecchie, viene annotato: non si
+riscarica il listone per lui a ogni pagina.
+
+Nella redazione, sotto «Manutenzione», ci sono i due pulsanti «Svuota la cache»
+e «Aggiorna il listone». Da terminale:
 
 ```bash
-python main.py --rigenera-cache   # svuota e riscarica
-python main.py --no-cache         # ignora senza cancellare
+python main.py --rigenera-cache   # svuota le giornate e riscarica
+python main.py --rigenera-listone # riscarica i nomi dei giocatori
+python main.py --no-cache         # ignora entrambe senza cancellare
 ```
 
 `--giornata N` limita anche la memoria alle giornate fino alla N: si ottiene il
@@ -688,8 +736,9 @@ i dati osservati non bastano a separarli.
   ultima giornata.
 - L'ordine fra squadre a pari punti usa differenza reti e poi fantapunti. La tua
   lega puo' avere criteri diversi: il valore non e' letto dalle impostazioni.
-- Il listone (~600 KB) viene riscaricato a ogni esecuzione: solo le formazioni
-  sono in cache.
+- Il listone resta in cache finché non compare un giocatore sconosciuto: se una
+  rosa cambia senza che nessuno scenda in campo, i nomi nuovi si vedono solo
+  dopo «Aggiorna il listone».
 - **Le serie dei giocatori non entrano in pagina.** La memoria sa chi va in gol
   da più giornate, ma nessuna sezione lo racconta: la scheda Memoria le segna
   come *non raccontate*.

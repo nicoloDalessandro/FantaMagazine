@@ -15,6 +15,7 @@ diagnostica passano da stderr.
     python main.py --memoria                # mostra cosa ricorda e cosa usa in pagina
     python main.py --immagine               # genera anche l'immagine con Gemini
     python main.py --rigenera-cache         # riscarica lo storico da zero
+    python main.py --rigenera-listone       # riscarica il listone dei giocatori
 
 Per un'interfaccia grafica:  python app.py
 """
@@ -25,7 +26,7 @@ import argparse
 import getpass
 import sys
 
-from fantamagazine import auth, gemini, impostazioni, servizio
+from fantamagazine import auth, gemini, impostazioni, listone, servizio
 
 # Il prompt contiene accenti italiani: senza questo, su una console Windows con
 # code page legacy l'output verrebbe mutilato.
@@ -306,6 +307,9 @@ def _esegui(argomenti: argparse.Namespace) -> int:
     if argomenti.rigenera_cache:
         log(f"cache svuotata: {servizio.svuota_cache()} file", sempre=True)
 
+    if argomenti.rigenera_listone:
+        log(f"listone da riscaricare: {listone.svuota()} file rimossi", sempre=True)
+
     # --- Scelta della competizione ----------------------------------------
     if argomenti.competizione:
         competizione = str(argomenti.competizione)
@@ -406,6 +410,11 @@ def main() -> int:
     )
     parser.add_argument(
         "--rigenera-cache", action="store_true", help="Svuota la cache e riscarica"
+    )
+    parser.add_argument(
+        "--rigenera-listone",
+        action="store_true",
+        help="Riscarica il listone dei giocatori, se una rosa è cambiata",
     )
     parser.add_argument(
         "--no-cache", action="store_true", help="Ignora la cache senza cancellarla"

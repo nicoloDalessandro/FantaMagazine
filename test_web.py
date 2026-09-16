@@ -447,6 +447,20 @@ def test_scelte_esci_e_aggiorna_dal_web() -> None:
     print("  ok  scelte lette e salvate, uscita e aggiornamento dal web; errori con il loro codice")
 
 
+def test_listone_aggiornato_dal_web() -> None:
+    chiamate = []
+    with _sostituisci(servizio, aggiorna_listone=lambda alias: chiamate.append(alias) or 595):
+        senza_lega = _client().post("/api/listone", json={})
+        elenco = _client().post("/api/listone", json=["tana"])
+        riuscito = _client().post("/api/listone", json={"lega": "tana"})
+        da_form = _client().post("/api/listone", data="lega=tana")
+    assert senza_lega.status_code == 400 and elenco.status_code == 400
+    assert da_form.status_code == 415
+    assert riuscito.status_code == 200 and riuscito.get_json() == {"giocatori": 595}
+    assert chiamate == ["tana"], chiamate
+    print("  ok  «Aggiorna il listone» dal web: una lega per volta, niente richieste storte")
+
+
 # --- Codici di uscita -----------------------------------------------------------------
 def test_codici_di_uscita_cli() -> None:
     assert servizio.ErroreServizio("", "token_scaduto").uscita == 2
