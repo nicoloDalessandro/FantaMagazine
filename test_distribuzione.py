@@ -35,8 +35,15 @@ RADICE = Path(__file__).resolve().parent
 
 @contextlib.contextmanager
 def _cartella():
+    """Una cartella temporanea, con il percorso già risolto.
+
+    `resolve()` non è un vezzo: su Windows la cartella temporanea può stare
+    dentro un nome abbreviato in forma 8.3 - sui runner di GitHub la TEMP
+    contiene `RUNNER~1` - e l'app risolve i percorsi prima di usarli. Senza
+    risolvere anche questo, il confronto fallirebbe pur essendo lo stesso posto.
+    """
     with tempfile.TemporaryDirectory() as nome:
-        yield Path(nome)
+        yield Path(nome).resolve()
 
 
 @contextlib.contextmanager
@@ -141,7 +148,8 @@ def test_nell_eseguibile_i_dati_stanno_accanto_all_exe() -> None:
         config.CONGELATO = True
         sys.executable = str(eseguibile)
         try:
-            assert config._cartella_dati() == finta
+            scelta = config._cartella_dati()
+            assert scelta == finta, f"{scelta} invece di {finta}"
         finally:
             config.CONGELATO, sys.executable = originali
     print("  ok  nell'eseguibile i dati stanno accanto all'exe, non in una cartella temporanea")
