@@ -4,10 +4,15 @@ Il modulo non sa nulla di leghe o giornate: riceve il testo del prompt e
 restituisce un'immagine, oppure un `ErroreGemini` con un codice stabile e un
 messaggio che dice cosa fare.
 
-Il modello predefinito è Gemini 3 Pro Image («Nano Banana Pro»), che Google
-indica come la scelta per i compiti visivi più complessi. Una prima pagina di
-giornale è esattamente questo: decine di righe di testo che devono uscire
-leggibili e scritte giuste.
+I modelli disponibili sono quattro e si scelgono: cambiano prezzo e qualità del
+testo dentro l'immagine. Il predefinito è Gemini 3 Pro Image («Nano Banana
+Pro»), che Google indica per i compiti visivi più complessi — una prima pagina
+è esattamente questo, decine di righe che devono uscire leggibili e scritte
+giuste — ma costa quattro volte il più economico.
+
+**Nessun modello per immagini ha un piano gratuito**: il listino di Google dice
+«Free Tier: not available» per tutti. Scegliere il modello serve a spendere
+meno, non a non spendere.
 
 La chiave API non compare mai in un messaggio d'errore, in un log o in una
 risposta verso il browser.
@@ -27,15 +32,69 @@ from . import config
 
 API = "https://generativelanguage.googleapis.com/v1beta"
 
-MODELLO_PREDEFINITO = os.getenv("GEMINI_MODELLO", "gemini-3-pro-image")
 PROPORZIONI = "9:16"
-DIMENSIONI = ("1K", "2K", "4K")
-# Per Nano Banana Pro 1K e 2K hanno lo stesso prezzo: 2K è gratis in più.
-DIMENSIONE_PREDEFINITA = "2K"
-# Listino in dollari per immagine (ai.google.dev/gemini-api/docs/pricing).
-# Serve solo a mostrare una stima prima di generare: la cifra vera la decide Google.
-COSTO_STIMATO = {"1K": 0.134, "2K": 0.134, "4K": 0.24}
 TEMPO_MASSIMO = float(os.getenv("GEMINI_TIMEOUT", "300"))
+
+
+@dataclass(frozen=True)
+class Modello:
+    """Un modello per immagini, con quello che serve per sceglierlo.
+
+    I costi sono il listino in dollari per immagine
+    (ai.google.dev/gemini-api/docs/pricing): servono a mostrare una stima prima
+    di generare, la cifra vera la decide Google.
+    """
+
+    id: str
+    nome: str
+    dimensioni: tuple[str, ...]
+    costi: dict[str, float]
+    nota: str
+    # Nano Banana non accetta la taglia: produce sempre immagini da 1024 px.
+    sceglie_taglia: bool = True
+
+
+MODELLI = (
+    Modello(
+        "gemini-3-pro-image", "Nano Banana Pro", ("1K", "2K", "4K"),
+        {"1K": 0.134, "2K": 0.134, "4K": 0.24},
+        "Il più preciso con il testo: per una prima pagina fitta di parole è la scelta migliore.",
+    ),
+    Modello(
+        "gemini-3.1-flash-image", "Nano Banana 2", ("0.5K", "1K", "2K", "4K"),
+        {"0.5K": 0.045, "1K": 0.067, "2K": 0.101, "4K": 0.151},
+        "Via di mezzo: in 1K costa la metà del Pro.",
+    ),
+    Modello(
+        "gemini-2.5-flash-image", "Nano Banana", ("1K",), {"1K": 0.039},
+        "Veloce ed economico, ma con tanto testo sbaglia più lettere. Solo 1K.",
+        sceglie_taglia=False,
+    ),
+    Modello(
+        "gemini-3.1-flash-lite-image", "Nano Banana 2 Lite", ("1K",), {"1K": 0.0336},
+        "Il più economico: un quarto del Pro, solo in 1K.",
+    ),
+)
+
+MODELLO_PREDEFINITO = "gemini-3-pro-image"
+DIMENSIONE_PREDEFINITA = "2K"  # per Nano Banana Pro costa come 1K, ma si legge meglio
+
+
+def modello(identificativo: str | None = None) -> Modello:
+    """La scheda di un modello. Uno non in elenco si accetta comunque: sarà nuovo."""
+    identificativo = (identificativo or MODELLO_PREDEFINITO).strip()
+    for scheda in MODELLI:
+        if scheda.id == identificativo:
+            return scheda
+    return Modello(
+        identificativo, identificativo, ("0.5K", "1K", "2K", "4K"), {},
+        "Modello indicato a mano: prezzo e taglie non sono noti qui.",
+    )
+
+
+def costo(identificativo: str | None, dimensione: str) -> float | None:
+    """Il costo stimato di un'immagine, o None se il modello non è in listino."""
+    return modello(identificativo).costi.get(dimensione)
 
 # Motivi di stop che significano "immagine rifiutata", non "guasto".
 _RIFIUTI = {
@@ -200,18 +259,19 @@ def estrai_immagine(risposta: dict) -> tuple[bytes, str, str]:
 def genera(
     prompt: str,
     dimensione: str = DIMENSIONE_PREDEFINITA,
-    modello: str | None = None,
+    modello_scelto: str | None = None,
 ) -> Immagine:
-    """Genera l'immagine in 9:16. Solleva ErroreGemini."""
-    if dimensione not in DIMENSIONI:
+    """Genera l'immagine in 9:16 con il modello scelto. Solleva ErroreGemini."""
+    scheda = modello(modello_scelto)
+    if dimensione not in scheda.dimensioni:
         raise ErroreGemini(
-            f"Risoluzione «{dimensione}» non valida: scegli fra {', '.join(DIMENSIONI)}.",
+            f"{scheda.nome} non fa immagini in «{dimensione}»: "
+            f"scegli fra {', '.join(scheda.dimensioni)}.",
             "richiesta_non_valida",
         )
     if not prompt.strip():
         raise ErroreGemini("Il prompt è vuoto.", "richiesta_non_valida")
 
-    modello = modello or MODELLO_PREDEFINITO
     chiave = carica_chiave()
     inizio = time.monotonic()
 
@@ -219,16 +279,16 @@ def genera(
     # senza servire. Se un modello non accettasse la richiesta di sola immagine,
     # risponderebbe 400 senza addebito, e si riprova chiedendo anche il testo.
     for modalita in (["IMAGE"], ["TEXT", "IMAGE"]):
+        immagine = {"aspectRatio": PROPORZIONI}
+        if scheda.sceglie_taglia:
+            immagine["imageSize"] = dimensione
         corpo = {
             "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-            "generationConfig": {
-                "responseModalities": modalita,
-                "imageConfig": {"aspectRatio": PROPORZIONI, "imageSize": dimensione},
-            },
+            "generationConfig": {"responseModalities": modalita, "imageConfig": immagine},
         }
         try:
             risposta = requests.post(
-                f"{API}/models/{modello}:generateContent",
+                f"{API}/models/{scheda.id}:generateContent",
                 headers={"x-goog-api-key": chiave, "Content-Type": "application/json"},
                 json=corpo,
                 timeout=TEMPO_MASSIMO,
@@ -259,7 +319,7 @@ def genera(
     return Immagine(
         dati=dati,
         mime=mime,
-        modello=modello,
+        modello=scheda.id,
         proporzioni=PROPORZIONI,
         dimensione=dimensione,
         secondi=round(time.monotonic() - inizio, 1),

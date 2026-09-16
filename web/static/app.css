@@ -1404,3 +1404,44 @@ a.pulsante[aria-disabled="true"] {
   font-size: 0.86rem;
   line-height: 1.45;
 }
+
+/* --- I comandi dell'immagine e le impostazioni ----------------------------- */
+.comandi-immagine {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 18px;
+  padding: 16px;
+  background: var(--pannello);
+  border: 1px solid var(--filetto);
+  border-radius: 10px;
+}
+
+.comandi-immagine__scelte {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: 12px 18px;
+}
+
+.comandi-immagine__azioni {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+}
+
+.scheda-impostazioni {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 44rem;
+  padding: clamp(16px, 2.5vw, 24px);
+  background: var(--pannello);
+  border: 1px solid var(--filetto);
+  border-radius: 10px;
+}
+
+.scheda-impostazioni code {
+  font-family: var(--mono);
+  font-size: 0.95em;
+}

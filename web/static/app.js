@@ -24,9 +24,20 @@
     barraAccount: $("barra-account"),
     accountNome: $("account-nome"),
     apriLeghe: $("apri-leghe"),
+    apriImpostazioni: $("apri-impostazioni"),
     esci: $("esci"),
     schermataAccesso: $("schermata-accesso"),
     schermataLeghe: $("schermata-leghe"),
+    schermataApp: $("schermata-app"),
+    titoloImpostazioni: $("titolo-impostazioni"),
+    chiaveGemini: $("chiave-gemini"),
+    statoChiave: $("stato-chiave"),
+    rimuoviChiave: $("rimuovi-chiave"),
+    modelloPredefinito: $("modello-predefinito"),
+    notaModelloPredefinito: $("nota-modello-predefinito"),
+    risoluzionePredefinita: $("risoluzione-predefinita"),
+    salvaApp: $("salva-app"),
+    chiudiApp: $("chiudi-app"),
     schermataRedazione: $("schermata-redazione"),
     titoloAccesso: $("titolo-accesso"),
     moduloAccesso: $("modulo-accesso"),
@@ -73,6 +84,8 @@
     rigeneraImmagine: $("rigenera-immagine"),
     salvaImmagine: $("salva-immagine"),
     scaricaImmagine: $("scarica-immagine"),
+    modelloImmagine: $("modello-immagine"),
+    notaModello: $("nota-modello"),
     risoluzione: $("risoluzione"),
     costoImmagine: $("costo-immagine"),
   };
@@ -210,7 +223,9 @@
     nodi.copia.disabled = stato.occupato;
     nodi.svuotaCache.disabled = stato.occupato;
     nodi.aggiornaListone.disabled = stato.occupato || !legaCorrente();
-    for (const pulsante of [nodi.entra, nodi.accessoChrome, nodi.apriLeghe, nodi.esci, nodi.aggiornaLeghe, nodi.annullaLeghe]) {
+    for (const pulsante of [nodi.entra, nodi.accessoChrome, nodi.apriLeghe, nodi.esci,
+                            nodi.aggiornaLeghe, nodi.annullaLeghe, nodi.apriImpostazioni,
+                            nodi.salvaApp, nodi.chiudiApp, nodi.rimuoviChiave]) {
       pulsante.disabled = stato.occupato;
     }
     nodi.salvaLeghe.disabled = stato.occupato || !stato.impostazioni.length;
@@ -949,49 +964,152 @@
   }
 
   // --- Immagine con Gemini -----------------------------------------------------
+  const schedaModello = (id) =>
+    (stato.gemini && stato.gemini.modelli.find((modello) => modello.id === id)) || null;
+
+  /** Riempie un menu di modelli, con il prezzo più basso di ciascuno. */
+  function riempiModelli(menu, scelto) {
+    menu.replaceChildren();
+    if (!stato.gemini) return;
+    for (const modello of stato.gemini.modelli) {
+      const prezzi = Object.values(modello.costi);
+      const etichetta = prezzi.length
+        ? `${modello.nome} · da ${valuta(Math.min(...prezzi))} $`
+        : modello.nome;
+      menu.append(el("option", { attributi: { value: modello.id } }, etichetta));
+    }
+    menu.value = scelto || stato.gemini.modello;
+    if (!menu.value && stato.gemini.modelli.length) menu.value = stato.gemini.modelli[0].id;
+  }
+
+  /** Le risoluzioni sono quelle del modello scelto: i più economici fanno solo 1K. */
+  function riempiRisoluzioni(menu, identificativo, scelta) {
+    const modello = schedaModello(identificativo);
+    menu.replaceChildren();
+    if (!modello) return;
+    for (const dimensione of modello.dimensioni) {
+      const costo = modello.costi[dimensione];
+      const etichetta = costo === undefined ? dimensione : `${dimensione} · ${valuta(costo)} $`;
+      menu.append(el("option", { attributi: { value: dimensione } }, etichetta));
+    }
+    menu.value = modello.dimensioni.includes(scelta) ? scelta : modello.dimensioni[0];
+    menu.disabled = modello.dimensioni.length < 2;
+  }
+
   async function caricaGemini() {
     try {
       stato.gemini = await chiama("/api/gemini");
     } catch {
       stato.gemini = null;
     }
-    nodi.risoluzione.replaceChildren();
-    if (stato.gemini) {
-      for (const dimensione of stato.gemini.dimensioni) {
-        const etichetta =
-          dimensione === stato.gemini.dimensione_predefinita ? `${dimensione} · consigliata` : dimensione;
-        nodi.risoluzione.append(el("option", { attributi: { value: dimensione } }, etichetta));
-      }
-      const salvata = preferenze.leggi("risoluzione");
-      nodi.risoluzione.value = stato.gemini.dimensioni.includes(salvata)
-        ? salvata
-        : stato.gemini.dimensione_predefinita;
-    }
+    riempiModelli(nodi.modelloImmagine, stato.gemini && stato.gemini.modello);
+    riempiRisoluzioni(
+      nodi.risoluzione, nodi.modelloImmagine.value, stato.gemini && stato.gemini.dimensione,
+    );
     aggiornaCosto();
+    disegnaImpostazioniApp();
     aggiornaControlli();
   }
 
   function aggiornaCosto() {
+    const modello = schedaModello(nodi.modelloImmagine.value);
+    nodi.notaModello.textContent = modello ? modello.nota : "";
     if (!stato.gemini) {
       nodi.costoImmagine.textContent = "Gemini non raggiungibile.";
       return;
     }
     if (!stato.gemini.disponibile) {
-      nodi.costoImmagine.textContent = "Manca la chiave di Gemini.";
+      nodi.costoImmagine.textContent = "Manca la chiave di Gemini: la si mette in Impostazioni.";
       return;
     }
-    const costo = stato.gemini.costi[nodi.risoluzione.value];
-    nodi.costoImmagine.textContent = `circa ${valuta(costo)} $ a immagine`;
+    const costo = modello && modello.costi[nodi.risoluzione.value];
+    nodi.costoImmagine.textContent = costo
+      ? `circa ${valuta(costo)} $ a immagine`
+      : "Costo non in listino.";
+  }
+
+  // --- Impostazioni ----------------------------------------------------------------
+  function disegnaImpostazioniApp() {
+    const dati = stato.gemini;
+    if (!dati) {
+      nodi.statoChiave.textContent = "Gemini non raggiungibile.";
+      return;
+    }
+    nodi.statoChiave.textContent = dati.chiave_da_ambiente
+      ? "La chiave arriva dalla variabile GEMINI_API_KEY, che ha la precedenza su quella salvata qui."
+      : dati.disponibile
+        ? `Chiave salvata nel file ${dati.chiave_file}: scrivendone una nuova, prende il suo posto.`
+        : "Nessuna chiave: la redazione scrive il prompt, ma non può generare l'immagine.";
+    riempiModelli(nodi.modelloPredefinito, dati.modello);
+    riempiRisoluzioni(nodi.risoluzionePredefinita, nodi.modelloPredefinito.value, dati.dimensione);
+    const modello = schedaModello(nodi.modelloPredefinito.value);
+    nodi.notaModelloPredefinito.textContent = modello ? modello.nota : "";
+    nodi.rimuoviChiave.hidden = !dati.disponibile || dati.chiave_da_ambiente;
+  }
+
+  function apriImpostazioniApp() {
+    if (stato.occupato) return;
+    disegnaImpostazioniApp();
+    mostraSchermata("app");
+  }
+
+  async function salvaApp() {
+    if (stato.occupato) return;
+    const corpo = {
+      modello: nodi.modelloPredefinito.value,
+      dimensione: nodi.risoluzionePredefinita.value,
+    };
+    // Una chiave non scritta vuol dire "lascia quella che c'è".
+    const chiave = nodi.chiaveGemini.value.trim();
+    if (chiave) corpo.chiave = chiave;
+
+    impostaOccupato(true);
+    let riuscito = false;
+    try {
+      stato.gemini = await chiama("/api/gemini", { metodo: "POST", corpo });
+      nodi.chiaveGemini.value = "";
+      riempiModelli(nodi.modelloImmagine, stato.gemini.modello);
+      riempiRisoluzioni(nodi.risoluzione, stato.gemini.modello, stato.gemini.dimensione);
+      aggiornaCosto();
+      disegnaImpostazioniApp();
+      mostraAvviso("Impostazioni salvate.", "ok");
+      riuscito = true;
+    } catch (errore) {
+      mostraAvviso(errore.message, "errore");
+    } finally {
+      impostaOccupato(false);
+    }
+    if (riuscito) mostraSchermata("redazione");
+  }
+
+  async function rimuoviChiave() {
+    if (stato.occupato) return;
+    const conferma = window.confirm(
+      "Rimuovere la chiave di Gemini da questo computer?\n\n" +
+        "La redazione continuerà a scrivere i prompt, ma non potrà più generare immagini " +
+        "finché non ne metti un'altra.",
+    );
+    if (!conferma) return;
+    impostaOccupato(true);
+    try {
+      stato.gemini = await chiama("/api/gemini/rimuovi-chiave", { metodo: "POST", corpo: {} });
+      nodi.chiaveGemini.value = "";
+      disegnaImpostazioniApp();
+      aggiornaCosto();
+      mostraAvviso("Chiave rimossa da questo computer.", "ok");
+    } catch (errore) {
+      mostraAvviso(errore.message, "errore");
+    } finally {
+      impostaOccupato(false);
+    }
   }
 
   function azzeraImmagine() {
     stato.immagine = null;
-    nodi.schedaImmagine.hidden = true;
     nodi.immagine.hidden = true;
     nodi.azioniImmagine.hidden = true;
     nodi.attesaImmagine.hidden = true;
     nodi.immagineImg.removeAttribute("src");
-    if (stato.scheda === "immagine") stato.scheda = "anteprima";
   }
 
   function mostraImmagine(dati) {
@@ -1015,15 +1133,14 @@
       lega: risultato.lega,
       giornata: risultato.pagina.giornata,
       seme: risultato.pagina.seme,
+      modello: nodi.modelloImmagine.value,
       dimensione: nodi.risoluzione.value,
     };
-    preferenze.scrivi("risoluzione", corpo.dimensione);
 
     const precedente = stato.immagine;
     nodi.esito.hidden = true;
     nascondiAvviso();
     impostaOccupato(true);
-    nodi.schedaImmagine.hidden = false;
     nodi.immagine.hidden = true;
     nodi.azioniImmagine.hidden = true;
     nodi.attesaImmagine.hidden = false;
@@ -1050,7 +1167,6 @@
         nodi.azioniImmagine.hidden = false;
       } else {
         azzeraImmagine();
-        mostraScheda("anteprima");
       }
       mostraErrore(errore);
     } finally {
@@ -1113,15 +1229,19 @@
     stato.schermata = nome;
     nodi.schermataAccesso.hidden = nome !== "accesso";
     nodi.schermataLeghe.hidden = nome !== "leghe";
+    nodi.schermataApp.hidden = nome !== "app";
     nodi.schermataRedazione.hidden = nome !== "redazione";
     nodi.barraAccount.hidden = nome === "accesso" || !(stato.account && stato.account.collegato);
     nodi.apriLeghe.hidden = nome === "leghe";
+    nodi.apriImpostazioni.hidden = nome === "app";
     // Il fuoco va dove si comincia a leggere: chi usa un lettore di schermo
     // deve accorgersi che la pagina è cambiata.
     if (nome === "accesso") {
       (nodi.accessoUtente.value ? nodi.accessoPassword : nodi.accessoUtente).focus();
     } else if (nome === "leghe") {
       nodi.titoloLeghe.focus();
+    } else if (nome === "app") {
+      nodi.titoloImpostazioni.focus();
     }
   }
 
@@ -1494,9 +1614,23 @@
     nodi.generaImmagine.addEventListener("click", generaImmagine);
     nodi.rigeneraImmagine.addEventListener("click", generaImmagine);
     nodi.salvaImmagine.addEventListener("click", salvaImmagine);
-    nodi.risoluzione.addEventListener("change", () => {
-      preferenze.scrivi("risoluzione", nodi.risoluzione.value);
+    nodi.risoluzione.addEventListener("change", aggiornaCosto);
+    nodi.modelloImmagine.addEventListener("change", () => {
+      riempiRisoluzioni(nodi.risoluzione, nodi.modelloImmagine.value, nodi.risoluzione.value);
       aggiornaCosto();
+    });
+    nodi.apriImpostazioni.addEventListener("click", apriImpostazioniApp);
+    nodi.salvaApp.addEventListener("click", salvaApp);
+    nodi.chiudiApp.addEventListener("click", tornaAllaRedazione);
+    nodi.rimuoviChiave.addEventListener("click", rimuoviChiave);
+    nodi.modelloPredefinito.addEventListener("change", () => {
+      riempiRisoluzioni(
+        nodi.risoluzionePredefinita,
+        nodi.modelloPredefinito.value,
+        nodi.risoluzionePredefinita.value,
+      );
+      const modello = schedaModello(nodi.modelloPredefinito.value);
+      nodi.notaModelloPredefinito.textContent = modello ? modello.nota : "";
     });
 
     const schedaSalvata = preferenze.leggi("scheda");

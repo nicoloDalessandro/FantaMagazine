@@ -16,6 +16,7 @@
     <div class="testata-app__azioni" id="barra-account" hidden>
       <span class="account" id="account-nome"></span>
       <button type="button" class="pulsante pulsante--leggero" id="apri-leghe">Le tue leghe</button>
+      <button type="button" class="pulsante pulsante--leggero" id="apri-impostazioni">Impostazioni</button>
       <button type="button" class="pulsante pulsante--leggero" id="esci">Esci</button>
     </div>
   </header>
@@ -84,6 +85,62 @@
     <div class="impostazioni__azioni">
       <button type="button" class="pulsante pulsante--primario" id="salva-leghe">Salva e apri la redazione</button>
       <button type="button" class="pulsante pulsante--leggero" id="annulla-leghe">Torna alla redazione</button>
+    </div>
+  </main>
+
+  <!-- Impostazioni ---------------------------------------------------------------->
+  <main class="impostazioni" id="schermata-app" hidden>
+    <div class="impostazioni__testa">
+      <div>
+        <h1 class="impostazioni__titolo" id="titolo-impostazioni" tabindex="-1">Impostazioni</h1>
+        <p class="nota">
+          Chiavi e preferenze restano su questo computer, in file esclusi da git.
+        </p>
+      </div>
+    </div>
+
+    <section class="scheda-impostazioni" aria-labelledby="titolo-gemini">
+      <h2 class="occhiello" id="titolo-gemini">Immagini con Gemini</h2>
+      <p class="nota" id="stato-chiave"></p>
+
+      <label class="gruppo">
+        <span class="gruppo__titolo">Chiave API</span>
+        <input type="password" id="chiave-gemini" autocomplete="off" spellcheck="false"
+               maxlength="200" placeholder="Incolla qui la chiave">
+        <span class="nota">
+          Si crea in Google AI Studio. Finisce nel file <code>.gemini_key</code>, non esce mai da
+          questo computer e non viene mai rimandata alla pagina.
+        </span>
+      </label>
+
+      <div class="azioni-esito__gruppo">
+        <a class="pulsante pulsante--leggero" href="https://aistudio.google.com/apikey"
+           target="_blank" rel="noopener noreferrer">Apri Google AI Studio</a>
+        <button type="button" class="pulsante pulsante--leggero" id="rimuovi-chiave">
+          Rimuovi la chiave
+        </button>
+      </div>
+
+      <label class="gruppo">
+        <span class="gruppo__titolo">Modello predefinito</span>
+        <select id="modello-predefinito"></select>
+        <span class="nota" id="nota-modello-predefinito"></span>
+      </label>
+
+      <label class="gruppo">
+        <span class="gruppo__titolo">Risoluzione predefinita</span>
+        <select id="risoluzione-predefinita"></select>
+      </label>
+
+      <p class="nota">
+        Nessun modello per immagini ha un piano gratuito: scegliere serve a spendere meno, non a
+        non spendere. Il prezzo per immagine è accanto a ogni modello.
+      </p>
+    </section>
+
+    <div class="impostazioni__azioni">
+      <button type="button" class="pulsante pulsante--primario" id="salva-app">Salva</button>
+      <button type="button" class="pulsante pulsante--leggero" id="chiudi-app">Torna alla redazione</button>
     </div>
   </main>
 
@@ -164,7 +221,7 @@
                   aria-selected="false" aria-controls="pannello-memoria" hidden>Memoria<span
                   class="scheda__conta" id="conta-memoria" aria-hidden="true" hidden></span></button>
           <button type="button" role="tab" class="scheda" id="scheda-immagine"
-                  aria-selected="false" aria-controls="pannello-immagine" hidden>Immagine</button>
+                  aria-selected="false" aria-controls="pannello-immagine">Immagine</button>
         </div>
       </div>
 
@@ -196,6 +253,26 @@
       </div>
 
       <div id="pannello-immagine" role="tabpanel" aria-labelledby="scheda-immagine" hidden>
+        <div class="comandi-immagine">
+          <div class="comandi-immagine__scelte">
+            <label class="gruppo">
+              <span class="gruppo__titolo">Modello</span>
+              <select id="modello-immagine"></select>
+            </label>
+            <label class="gruppo">
+              <span class="gruppo__titolo">Risoluzione</span>
+              <select id="risoluzione"></select>
+            </label>
+          </div>
+          <p class="nota" id="nota-modello"></p>
+          <div class="comandi-immagine__azioni">
+            <button type="button" class="pulsante pulsante--primario" id="genera-immagine">
+              Genera l'immagine
+            </button>
+            <span class="nota" id="costo-immagine"></span>
+          </div>
+        </div>
+
         <div class="attesa-immagine" id="attesa-immagine" hidden>
           <div class="attesa-immagine__foglio" aria-hidden="true"></div>
           <p class="nota" id="attesa-immagine-testo" aria-live="polite"></p>
@@ -212,12 +289,6 @@
       </div>
 
       <div class="azioni-esito" id="azioni-esito" hidden>
-        <div class="azioni-esito__gruppo">
-          <button type="button" class="pulsante pulsante--primario" id="genera-immagine">Genera l'immagine</button>
-          <label class="solo-lettori" for="risoluzione">Risoluzione</label>
-          <select id="risoluzione" class="selettore-compatto"></select>
-          <span class="nota" id="costo-immagine"></span>
-        </div>
         <div class="azioni-esito__gruppo">
           <button type="button" class="pulsante pulsante--leggero" id="copia">Copia il prompt</button>
           <button type="button" class="pulsante pulsante--leggero" id="altra-versione">Scrivila diversamente</button>

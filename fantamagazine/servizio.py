@@ -10,6 +10,7 @@ niente codici di uscita, niente HTML. Chi chiama riceve dati oppure un
 from __future__ import annotations
 
 import json
+import os
 import random
 import re
 import secrets
@@ -642,6 +643,8 @@ def aggiorna_listone(alias: str) -> int:
 
 # --- Immagini con Gemini ----------------------------------------------------------
 _ID_BOZZA = re.compile(r"[0-9a-f]{32}")
+# Una chiave di Google: una riga sola, senza spazi.
+_CHIAVE_GEMINI = re.compile(r"[A-Za-z0-9_\-]{20,200}")
 _SLUG = re.compile(r"[^a-z0-9-]+")
 
 
@@ -667,15 +670,67 @@ class Bozza:
 
 
 def stato_gemini() -> dict:
-    """Ciò che serve all'interfaccia per proporre la generazione. Mai la chiave."""
+    """Ciò che serve all'interfaccia per proporre la generazione. Mai la chiave.
+
+    Nessun modello per immagini ha un piano gratuito: i costi servono a
+    scegliere quanto spendere, non se spendere.
+    """
+    modello = impostazioni.modello_immagine()
     return {
         "disponibile": gemini.chiave_presente(),
-        "modello": gemini.MODELLO_PREDEFINITO,
+        "chiave_da_ambiente": bool(os.getenv("GEMINI_API_KEY", "").strip()),
+        "chiave_file": config.GEMINI_KEY_FILE.name,
+        "modello": modello,
+        "modello_da_ambiente": bool(os.getenv("GEMINI_MODELLO", "").strip()),
         "proporzioni": gemini.PROPORZIONI,
-        "dimensioni": list(gemini.DIMENSIONI),
-        "dimensione_predefinita": gemini.DIMENSIONE_PREDEFINITA,
-        "costi": gemini.COSTO_STIMATO,
+        "dimensione": impostazioni.dimensione_immagine(modello),
+        "modelli": [
+            {
+                "id": scheda.id,
+                "nome": scheda.nome,
+                "nota": scheda.nota,
+                "dimensioni": list(scheda.dimensioni),
+                "costi": scheda.costi,
+            }
+            for scheda in gemini.MODELLI
+        ],
     }
+
+
+def salva_chiave_gemini(chiave: str) -> None:
+    """Scrive la chiave nel file escluso da git. Non la restituisce mai."""
+    chiave = (chiave or "").strip()
+    if not _CHIAVE_GEMINI.fullmatch(chiave):
+        raise ErroreServizio(
+            "Questa non sembra una chiave di Gemini: dovrebbe essere una riga sola di "
+            "lettere, numeri, trattini e underscore. Copiala da Google AI Studio.",
+            "gemini_chiave_non_valida",
+        )
+    config.GEMINI_KEY_FILE.write_text(chiave, encoding="utf-8")
+    try:
+        os.chmod(config.GEMINI_KEY_FILE, 0o600)
+    except OSError:
+        pass
+
+
+def rimuovi_chiave_gemini() -> None:
+    """Cancella la chiave da questo computer."""
+    try:
+        config.GEMINI_KEY_FILE.unlink()
+    except FileNotFoundError:
+        pass
+
+
+def salva_impostazioni_immagine(modello: str, dimensione: str) -> None:
+    """Salva modello e taglia predefiniti per le immagini."""
+    if modello not in {scheda.id for scheda in gemini.MODELLI}:
+        raise ErroreServizio("Modello non fra quelli disponibili.", "impostazioni_non_valide")
+    if dimensione not in gemini.modello(modello).dimensioni:
+        raise ErroreServizio(
+            f"{gemini.modello(modello).nome} non fa immagini in «{dimensione}».",
+            "impostazioni_non_valide",
+        )
+    impostazioni.salva_immagine(impostazioni.SceltaImmagine(modello=modello, dimensione=dimensione))
 
 
 def _nome_file(lega: str, giornata: int | None, seme: int | None, estensione: str) -> str:
@@ -702,13 +757,19 @@ def genera_immagine(
     lega: str = "",
     giornata: int | None = None,
     seme: int | None = None,
-    dimensione: str = gemini.DIMENSIONE_PREDEFINITA,
+    dimensione: str = "",
+    modello: str = "",
 ) -> Bozza:
-    """Manda il prompt a Gemini e conserva l'immagine come bozza."""
+    """Manda il prompt a Gemini e conserva l'immagine come bozza.
+
+    Senza modello o taglia si usano quelli scelti nelle impostazioni.
+    """
     if len(prompt_testo) > 30_000:
         raise ErroreServizio("Il prompt è troppo lungo per essere inviato.", "gemini_richiesta_non_valida")
+    modello = modello or impostazioni.modello_immagine()
+    dimensione = dimensione or impostazioni.dimensione_immagine(modello)
     try:
-        immagine = gemini.genera(prompt_testo, dimensione=dimensione)
+        immagine = gemini.genera(prompt_testo, dimensione=dimensione, modello_scelto=modello)
     except gemini.ErroreGemini as errore:
         raise ErroreServizio(errore.messaggio, f"gemini_{errore.codice}") from errore
 
@@ -726,7 +787,7 @@ def genera_immagine(
         proporzioni=immagine.proporzioni,
         dimensione=immagine.dimensione,
         secondi=immagine.secondi,
-        costo_stimato=gemini.COSTO_STIMATO.get(immagine.dimensione, 0.0),
+        costo_stimato=gemini.costo(immagine.modello, immagine.dimensione) or 0.0,
         commento=immagine.commento,
     )
     _meta(bozza_id).write_text(

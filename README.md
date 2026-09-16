@@ -59,7 +59,7 @@ python main.py --varia          # riformula il pezzo a ogni esecuzione
 python main.py --seme 42        # riformula in modo riproducibile
 python main.py --memoria        # su stderr: cosa ricorda la memoria e cosa usa la pagina
 python main.py --immagine       # genera anche l'immagine e la salva in prime_pagine/
-python main.py --immagine --risoluzione 4K
+python main.py --immagine --modello gemini-3.1-flash-lite-image
 python main.py --rigenera-cache # riscarica lo storico da zero
 python main.py --rigenera-listone # riscarica il listone dei giocatori
 python main.py --aggiorna-leghe # ritrova le leghe nuove, senza password
@@ -228,33 +228,55 @@ usa anche se è spenta.
 
 ## L'immagine con Gemini
 
-Il prompt va direttamente a **Gemini 3 Pro Image** («Nano Banana Pro»), il
-modello che Google indica per i compiti visivi più complessi: una prima pagina
-fitta di testo che deve uscire leggibile e scritta giusta è esattamente questo.
-L'immagine è sempre in **9:16**.
+Il prompt va direttamente a Gemini, che restituisce la prima pagina come
+immagine in **9:16**. La scheda **Immagine** della redazione tiene insieme
+tutto: il modello, la risoluzione, il costo stimato e il pulsante per generare.
 
 ### Prima di cominciare: la fatturazione
 
-**La generazione di immagini non ha un piano gratuito.** Con una chiave sul
-piano gratuito Google risponde con un rifiuto di quota, e la redazione lo dice
-chiaramente. Serve attivare la fatturazione sul progetto della chiave, da
-[Google AI Studio](https://aistudio.google.com/apikey): dopo, la stessa chiave
-funziona senza cambiare nulla qui.
+**Nessun modello per immagini ha un piano gratuito.** Il listino di Google dice
+«Free Tier: not available» per tutti e quattro: scegliere il modello serve a
+spendere meno, non a non spendere. Con una chiave sul piano gratuito Google
+risponde con un rifiuto di quota, e la redazione lo dice chiaramente: serve
+attivare la fatturazione sul progetto della chiave, da
+[Google AI Studio](https://aistudio.google.com/apikey).
 
 Conviene impostare anche un **avviso di spesa** (budget alert) sul progetto
 Google Cloud collegato: ogni immagine costa, e un tetto evita sorprese.
 
-### Costi e risoluzione
+### Quale modello
 
-| Risoluzione | Costo indicativo | Note |
-|---|---|---|
-| 1K | circa 0,13 $ | |
-| **2K** | **circa 0,13 $** | predefinita: stesso prezzo di 1K, più leggibile |
-| 4K | circa 0,24 $ | per stampe o schermi grandi |
+| Modello | Risoluzioni | Costo per immagine | Quando |
+|---|---|---|---|
+| **Nano Banana Pro** (`gemini-3-pro-image`) | 1K, 2K, 4K | 0,134 $ (1K e 2K), 0,24 $ (4K) | predefinito: il più preciso con il testo |
+| **Nano Banana 2** (`gemini-3.1-flash-image`) | 0.5K, 1K, 2K, 4K | da 0,045 $ a 0,151 $ | via di mezzo: in 1K costa la metà |
+| **Nano Banana** (`gemini-2.5-flash-image`) | 1K | 0,039 $ | veloce, ma con tanto testo sbaglia più lettere |
+| **Nano Banana 2 Lite** (`gemini-3.1-flash-lite-image`) | 1K | 0,0336 $ | il più economico: un quarto del Pro |
 
-Le cifre vengono dal listino di Google e servono solo come stima prima del
+Una prima pagina è fitta di parole, ed è lì che i modelli si distinguono: il Pro
+sbaglia meno lettere. Se l'immagine serve solo per farsi un'idea, i modelli
+Lite costano un quarto.
+
+Ogni modello accetta risoluzioni diverse, e la redazione mostra solo quelle che
+sa fare: scegliendo un modello che fa solo 1K, il menu della risoluzione si
+blocca da solo. Le cifre vengono dal listino e servono come stima prima del
 clic: il costo vero lo decide Google. Una richiesta rifiutata (chiave non
 valida, quota, parametri sbagliati) non costa nulla.
+
+### Le impostazioni
+
+Il pulsante **Impostazioni**, in alto accanto a «Le tue leghe», raccoglie ciò
+che non riguarda una lega sola:
+
+- la **chiave di Gemini**: si incolla, viene salvata nel file `.gemini_key` e non
+  torna mai indietro alla pagina, nemmeno in parte. «Rimuovi la chiave» la
+  cancella da questo computer;
+- il **modello** e la **risoluzione predefiniti**, quelli che la scheda Immagine
+  propone ogni volta.
+
+Una chiave scritta storta viene rifiutata prima di toccare quella salvata. Se
+la chiave arriva dalla variabile d'ambiente `GEMINI_API_KEY`, la schermata lo
+dice: quella ha la precedenza su quella salvata qui.
 
 ### Bozze e archivio
 
@@ -268,7 +290,12 @@ browser, e «Rigenera l'immagine» ne chiede un'altra dallo stesso prompt.
 Il seme nel nome riproduce il **testo**, non il disegno: lo stesso prompt dà a
 ogni generazione un'immagine diversa, e ognuna si paga.
 
-Da riga di comando `--immagine` salva direttamente in archivio.
+Da riga di comando `--immagine` salva direttamente in archivio, e `--modello`
+con `--risoluzione` scelgono per quella volta:
+
+```bash
+python main.py --immagine --modello gemini-3.1-flash-lite-image --risoluzione 1K
+```
 
 ### La chiave
 
@@ -280,7 +307,8 @@ c'è, mai la chiave.
 
 Le prove lo verificano: `test_gemini.py` fa fallire la richiesta in tutti i modi
 previsti e controlla che la chiave non compaia in nessun messaggio d'errore,
-`test_web.py` che non esca dall'API locale.
+`test_web.py` che non esca dall'API locale, nemmeno dopo averla salvata dalla
+schermata delle impostazioni.
 
 ### Come è stato verificato
 
@@ -364,7 +392,7 @@ Tutto sovrascrivibile da variabili d'ambiente (vedi `fantamagazine/config.py`):
 | `FANTA_TESTATA` | — | Forza la testata per ogni lega |
 | `GEMINI_API_KEY` | — | Chiave di Gemini, se non si usa il file |
 | `GEMINI_KEY_FILE` | `.gemini_key` | Dove sta la chiave di Gemini |
-| `GEMINI_MODELLO` | `gemini-3-pro-image` | Modello per le immagini |
+| `GEMINI_MODELLO` | — | Forza il modello, ignorando la scelta nelle impostazioni |
 | `GEMINI_TIMEOUT` | `300` | Secondi di attesa massima per un'immagine |
 | `FANTA_ARCHIVIO` | `prime_pagine` | Cartella delle prime pagine salvate |
 

@@ -498,8 +498,42 @@ def test_stato_gemini_senza_chiave_in_chiaro() -> None:
     import json as _json
     dati = _json.loads(corpo)
     assert dati["disponibile"] is True and dati["proporzioni"] == "9:16", dati
-    assert dati["dimensione_predefinita"] in dati["dimensioni"]
-    print("  ok  /api/gemini dice se la chiave c'è, non quale sia")
+    modelli = {m["id"]: m for m in dati["modelli"]}
+    assert dati["modello"] in modelli, dati["modello"]
+    assert dati["dimensione"] in modelli[dati["modello"]]["dimensioni"], dati
+    assert all(m["costi"] and m["nome"] and m["nota"] for m in dati["modelli"]), modelli
+    print(f"  ok  /api/gemini dice se la chiave c'è, non quale sia, e offre {len(modelli)} modelli")
+
+
+def test_impostazioni_gemini_dal_web() -> None:
+    salvate, chiavi, rimozioni = [], [], []
+    stato = {"disponibile": True, "modello": "gemini-3-pro-image", "dimensione": "2K", "modelli": []}
+    with _sostituisci(
+        servizio,
+        salva_chiave_gemini=lambda chiave: chiavi.append(chiave),
+        salva_impostazioni_immagine=lambda modello, dimensione: salvate.append((modello, dimensione)),
+        rimuovi_chiave_gemini=lambda: rimozioni.append(True),
+        stato_gemini=lambda: stato,
+    ):
+        salvato = _client().post(
+            "/api/gemini",
+            json={"chiave": " AIza-di-prova-1234567890 ", "modello": "gemini-2.5-flash-image", "dimensione": "1K"},
+        )
+        senza_chiave = _client().post(
+            "/api/gemini", json={"modello": "gemini-2.5-flash-image", "dimensione": "1K"}
+        )
+        chiave_storta = _client().post("/api/gemini", json={"chiave": 42})
+        rimossa = _client().post("/api/gemini/rimuovi-chiave", json={})
+        da_form = _client().post("/api/gemini", data="chiave=x")
+
+    assert salvato.status_code == 200 and salvato.get_json() == stato
+    assert chiavi == [" AIza-di-prova-1234567890 "], chiavi
+    assert salvate == [("gemini-2.5-flash-image", "1K")] * 2, salvate
+    assert senza_chiave.status_code == 200 and len(chiavi) == 1, "senza chiave non si tocca quella salvata"
+    assert chiave_storta.status_code == 400 and da_form.status_code == 415
+    assert rimossa.status_code == 200 and rimozioni == [True]
+    assert "AIza-di-prova" not in salvato.get_data(as_text=True)
+    print("  ok  chiave e modello salvati dal web; la chiave non torna mai indietro")
 
 
 def test_immagine_valida_i_parametri() -> None:
@@ -507,6 +541,11 @@ def test_immagine_valida_i_parametri() -> None:
     with _sostituisci(servizio, genera_immagine=lambda *a, **k: chiamate.append(k)):
         senza_prompt = _client().post("/api/immagine", json={"lega": "tana"})
         risoluzione = _client().post("/api/immagine", json={"prompt": "x", "dimensione": "8K"})
+        modello = _client().post("/api/immagine", json={"prompt": "x", "modello": "gpt-immagini"})
+        taglia_del_modello = _client().post(
+            "/api/immagine", json={"prompt": "x", "modello": "gemini-3.1-flash-lite-image", "dimensione": "4K"}
+        )
+        assert modello.status_code == 400 and taglia_del_modello.status_code == 400
         giornata = _client().post("/api/immagine", json={"prompt": "x", "giornata": "tre"})
     assert senza_prompt.status_code == 400 and "prompt" in senza_prompt.get_json()["errore"]
     assert risoluzione.status_code == 400, risoluzione.status_code
@@ -529,11 +568,13 @@ def test_immagine_generata() -> None:
         with _sostituisci(servizio, genera_immagine=finta):
             risposta = _client().post(
                 "/api/immagine",
-                json={"prompt": "PROMPT", "lega": "fantatana", "giornata": 3, "seme": 7, "dimensione": "4K"},
+                json={"prompt": "PROMPT", "lega": "fantatana", "giornata": 3, "seme": 7,
+                      "dimensione": "4K", "modello": "gemini-3-pro-image"},
             )
     assert risposta.status_code == 200, risposta.get_data(as_text=True)
     dati = risposta.get_json()
-    assert ricevuti == {"prompt": "PROMPT", "lega": "fantatana", "giornata": 3, "seme": 7, "dimensione": "4K"}, ricevuti
+    assert ricevuti == {"prompt": "PROMPT", "lega": "fantatana", "giornata": 3, "seme": 7,
+                        "dimensione": "4K", "modello": "gemini-3-pro-image"}, ricevuti
     assert dati["url"] == f"/immagini/{'a' * 32}" and dati["url_scarica"].endswith("?scarica=1")
     assert "percorso" not in dati, "il percorso sul disco non serve al browser"
     print("  ok  /api/immagine passa prompt e scelte al servizio e restituisce gli indirizzi")

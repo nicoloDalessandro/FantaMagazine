@@ -343,10 +343,13 @@ def _esegui(argomenti: argparse.Namespace) -> int:
     if argomenti.immagine:
         # Il prompt è già su stdout: se Gemini fallisce resta comunque utilizzabile.
         sys.stdout.flush()
-        costo = gemini.COSTO_STIMATO.get(argomenti.risoluzione, 0.0)
+        modello = argomenti.modello or impostazioni.modello_immagine()
+        risoluzione = argomenti.risoluzione or impostazioni.dimensione_immagine(modello)
+        costo = gemini.costo(modello, risoluzione)
+        spesa = f"circa {costo:.3f} $".rstrip("0").rstrip(",") if costo else "costo non in listino"
         print(
-            f"Invio a Gemini ({gemini.MODELLO_PREDEFINITO}, {gemini.PROPORZIONI}, "
-            f"{argomenti.risoluzione}, circa {costo:.2f} $): può richiedere un minuto...",
+            f"Invio a Gemini ({gemini.modello(modello).nome}, {gemini.PROPORZIONI}, "
+            f"{risoluzione}, {spesa}): può richiedere un minuto...",
             file=sys.stderr,
         )
         bozza = servizio.genera_immagine(
@@ -354,7 +357,8 @@ def _esegui(argomenti: argparse.Namespace) -> int:
             lega=risultato.lega,
             giornata=risultato.pagina.giornata,
             seme=risultato.pagina.seme,
-            dimensione=argomenti.risoluzione,
+            dimensione=risoluzione,
+            modello=modello,
         )
         percorso = servizio.salva_immagine(bozza.id)
         print(f"Immagine salvata in {percorso} ({bozza.secondi} s)", file=sys.stderr)
@@ -403,10 +407,14 @@ def main() -> int:
         help="Manda il prompt a Gemini e salva l'immagine in prime_pagine/",
     )
     parser.add_argument(
+        "--modello",
+        choices=[scheda.id for scheda in gemini.MODELLI],
+        help="Modello per l'immagine (predefinito: quello scelto nelle impostazioni)",
+    )
+    parser.add_argument(
         "--risoluzione",
-        choices=gemini.DIMENSIONI,
-        default=gemini.DIMENSIONE_PREDEFINITA,
-        help="Risoluzione dell'immagine (predefinita: %(default)s)",
+        choices=sorted({t for scheda in gemini.MODELLI for t in scheda.dimensioni}),
+        help="Risoluzione dell'immagine, fra quelle che il modello sa fare",
     )
     parser.add_argument(
         "--rigenera-cache", action="store_true", help="Svuota la cache e riscarica"

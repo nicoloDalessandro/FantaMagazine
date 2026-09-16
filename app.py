@@ -186,6 +186,28 @@ def crea_app() -> Flask:
         # Dice se la chiave c'è, non quale sia.
         return jsonify(servizio.stato_gemini())
 
+    @app.post("/api/gemini")
+    def salva_gemini():
+        dati = _oggetto(request.get_json(silent=True))
+        chiave = dati.get("chiave")
+        # Una chiave vuota vuol dire "non toccarla": per cancellarla c'è la sua rotta.
+        if isinstance(chiave, str) and chiave.strip():
+            servizio.salva_chiave_gemini(chiave)
+        elif chiave not in (None, ""):
+            return _errore("La chiave deve essere testo.", "parametri", 400)
+
+        modello, dimensione = dati.get("modello"), dati.get("dimensione")
+        if modello is not None or dimensione is not None:
+            if not isinstance(modello, str) or not isinstance(dimensione, str):
+                return _errore("Modello e risoluzione devono essere testo.", "parametri", 400)
+            servizio.salva_impostazioni_immagine(modello, dimensione)
+        return jsonify(servizio.stato_gemini())
+
+    @app.post("/api/gemini/rimuovi-chiave")
+    def rimuovi_chiave_gemini():
+        servizio.rimuovi_chiave_gemini()
+        return jsonify(servizio.stato_gemini())
+
     @app.post("/api/immagine")
     def immagine():
         dati = request.get_json(silent=True) or {}
@@ -196,12 +218,16 @@ def crea_app() -> Flask:
         except ValueError as errore:
             return _errore(str(errore), "parametri", 400)
 
-        dimensione = str(dati.get("dimensione") or gemini.DIMENSIONE_PREDEFINITA)
-        if dimensione not in gemini.DIMENSIONI:
+        modello = str(dati.get("modello") or "")
+        if modello and modello not in {scheda.id for scheda in gemini.MODELLI}:
+            return _errore("Modello non fra quelli disponibili.", "parametri", 400)
+        dimensione = str(dati.get("dimensione") or "")
+        # La taglia si controlla contro il modello scelto qui, o contro quello
+        # predefinito: ogni modello fa taglie diverse.
+        taglie = gemini.modello(modello or servizio.stato_gemini()["modello"]).dimensioni
+        if dimensione and dimensione not in taglie:
             return _errore(
-                f"Risoluzione non valida: scegli fra {', '.join(gemini.DIMENSIONI)}.",
-                "parametri",
-                400,
+                f"Risoluzione non valida: scegli fra {', '.join(taglie)}.", "parametri", 400
             )
 
         bozza = servizio.genera_immagine(
@@ -210,6 +236,7 @@ def crea_app() -> Flask:
             giornata=giornata,
             seme=seme,
             dimensione=dimensione,
+            modello=modello,
         )
         return jsonify(_bozza_json(bozza))
 

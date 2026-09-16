@@ -346,6 +346,110 @@ def test_messaggi_di_quota_brevi_e_distinti() -> None:
     print("  ok  quota: piano gratuito e limite raggiunto hanno messaggi brevi e diversi")
 
 
+# --- I modelli --------------------------------------------------------------------------
+def test_ogni_modello_ha_prezzo_e_taglie() -> None:
+    identificativi = [scheda.id for scheda in gemini.MODELLI]
+    assert len(identificativi) == len(set(identificativi)), identificativi
+    for scheda in gemini.MODELLI:
+        assert scheda.dimensioni, scheda.id
+        assert set(scheda.costi) == set(scheda.dimensioni), f"{scheda.id}: prezzi e taglie diversi"
+        assert all(costo > 0 for costo in scheda.costi.values()), scheda.costi
+        assert scheda.nome and scheda.nota, scheda.id
+        assert gemini.costo(scheda.id, scheda.dimensioni[0]) == scheda.costi[scheda.dimensioni[0]]
+    assert gemini.modello(gemini.MODELLO_PREDEFINITO).id == gemini.MODELLO_PREDEFINITO
+    # Un modello mai visto si accetta lo stesso: prezzo sconosciuto, nessun blocco.
+    nuovo = gemini.modello("gemini-9-image")
+    assert nuovo.id == "gemini-9-image" and nuovo.costi == {}
+    assert gemini.costo("gemini-9-image", "1K") is None
+    print(f"  ok  {len(gemini.MODELLI)} modelli con prezzo e taglie coerenti, più quelli futuri")
+
+
+def test_ogni_modello_chiede_quello_che_sa_fare() -> None:
+    """Nano Banana non accetta la taglia: chiedergliela sarebbe un errore dell'API."""
+    for scheda in gemini.MODELLI:
+        taglia = scheda.dimensioni[-1]
+        with _ambiente([_successo(_parte_immagine(b"png"))]) as inviate:
+            immagine = gemini.genera("prova", dimensione=taglia, modello_scelto=scheda.id)
+        configurazione = inviate[0]["json"]["generationConfig"]["imageConfig"]
+        assert f"models/{scheda.id}:generateContent" in inviate[0]["url"], inviate[0]["url"]
+        assert configurazione["aspectRatio"] == "9:16"
+        assert ("imageSize" in configurazione) is scheda.sceglie_taglia, (scheda.id, configurazione)
+        assert immagine.modello == scheda.id and immagine.dimensione == taglia
+
+        # Una taglia che quel modello non fa non parte nemmeno.
+        with _ambiente([]) as nessuna:
+            errore = _errore(lambda s=scheda: gemini.genera("prova", "8K", modello_scelto=s.id))
+        assert errore.codice == "richiesta_non_valida" and scheda.nome in errore.messaggio
+        assert not nessuna, "una taglia impossibile non deve diventare una richiesta"
+    print("  ok  ogni modello riceve solo le taglie che sa fare, e il suo indirizzo")
+
+
+# --- La chiave e le impostazioni ---------------------------------------------------------
+def test_chiave_salvata_e_rimossa() -> None:
+    with _cartelle_temporanee() as (cartella, _archivio):
+        originale = config.GEMINI_KEY_FILE
+        config.GEMINI_KEY_FILE = cartella.parent / ".gemini_key"
+        ambiente = os.environ.pop("GEMINI_API_KEY", None)
+        try:
+            servizio.salva_chiave_gemini("  AIzaSy-chiave-di-prova-1234567890  ")
+            assert config.GEMINI_KEY_FILE.read_text(encoding="utf-8") == "AIzaSy-chiave-di-prova-1234567890"
+            assert gemini.chiave_presente() is True
+            stato = servizio.stato_gemini()
+            assert "AIzaSy" not in json.dumps(stato), "la chiave è finita nello stato"
+            assert stato["disponibile"] is True and stato["chiave_da_ambiente"] is False
+
+            for storta in ("corta", "con spazi in mezzo qui dentro", "a" * 300, "", "chiave;rm -rf /"):
+                errore = None
+                try:
+                    servizio.salva_chiave_gemini(storta)
+                except servizio.ErroreServizio as esito:
+                    errore = esito
+                assert errore and errore.codice == "gemini_chiave_non_valida", storta
+                assert config.GEMINI_KEY_FILE.read_text(encoding="utf-8").startswith("AIzaSy")
+
+            servizio.rimuovi_chiave_gemini()
+            assert not config.GEMINI_KEY_FILE.exists() and gemini.chiave_presente() is False
+            servizio.rimuovi_chiave_gemini()  # due volte non è un errore
+        finally:
+            config.GEMINI_KEY_FILE = originale
+            if ambiente is not None:
+                os.environ["GEMINI_API_KEY"] = ambiente
+    print("  ok  chiave salvata e cancellata; le chiavi storte vengono rifiutate senza scrivere")
+
+
+def test_impostazioni_immagine_guidano_la_generazione() -> None:
+    from fantamagazine import impostazioni
+
+    with _cartelle_temporanee() as (cartella, _archivio):
+        originale = config.IMPOSTAZIONI_FILE
+        config.IMPOSTAZIONI_FILE = cartella.parent / ".fanta_impostazioni.json"
+        ambiente = os.environ.pop("GEMINI_MODELLO", None)
+        try:
+            servizio.salva_impostazioni_immagine("gemini-3.1-flash-lite-image", "1K")
+            assert impostazioni.modello_immagine() == "gemini-3.1-flash-lite-image"
+            assert impostazioni.dimensione_immagine() == "1K"
+
+            for modello, dimensione in (("inventato", "1K"), ("gemini-3.1-flash-lite-image", "4K")):
+                errore = None
+                try:
+                    servizio.salva_impostazioni_immagine(modello, dimensione)
+                except servizio.ErroreServizio as esito:
+                    errore = esito
+                assert errore and errore.codice == "impostazioni_non_valide", (modello, dimensione)
+            assert impostazioni.modello_immagine() == "gemini-3.1-flash-lite-image", "scelta cambiata"
+
+            # Senza indicazioni, la generazione usa quanto scelto qui.
+            with _ambiente([_successo(_parte_immagine(b"png"))]) as inviate:
+                bozza = servizio.genera_immagine("prova")
+            assert "gemini-3.1-flash-lite-image" in inviate[0]["url"], inviate[0]["url"]
+            assert (bozza.dimensione, bozza.costo_stimato) == ("1K", 0.0336), bozza
+        finally:
+            config.IMPOSTAZIONI_FILE = originale
+            if ambiente is not None:
+                os.environ["GEMINI_MODELLO"] = ambiente
+    print("  ok  modello e taglia scelti valgono per la generazione, e le scelte storte si rifiutano")
+
+
 def main_test() -> int:
     prove = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     falliti = 0
