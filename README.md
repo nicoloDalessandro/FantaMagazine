@@ -232,18 +232,6 @@ Il prompt va direttamente a Gemini, che restituisce la prima pagina come
 immagine in **9:16**. La scheda **Immagine** della redazione tiene insieme
 tutto: il modello, la risoluzione, il costo stimato e il pulsante per generare.
 
-### Prima di cominciare: la fatturazione
-
-**Nessun modello per immagini ha un piano gratuito.** Il listino di Google dice
-«Free Tier: not available» per tutti e quattro: scegliere il modello serve a
-spendere meno, non a non spendere. Con una chiave sul piano gratuito Google
-risponde con un rifiuto di quota, e la redazione lo dice chiaramente: serve
-attivare la fatturazione sul progetto della chiave, da
-[Google AI Studio](https://aistudio.google.com/apikey).
-
-Conviene impostare anche un **avviso di spesa** (budget alert) sul progetto
-Google Cloud collegato: ogni immagine costa, e un tetto evita sorprese.
-
 ### Quale modello
 
 | Modello | Risoluzioni | Costo per immagine | Quando |
