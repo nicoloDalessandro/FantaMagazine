@@ -27,3 +27,8 @@ venv/
 
 # IDE
 .idea/
+
+# Costruzione dell'eseguibile (vedi distribuzione/): si rifa' con PyInstaller
+build/
+dist/
+*.zip

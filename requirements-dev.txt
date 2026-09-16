@@ -1,0 +1,4 @@
+# Serve solo a costruire l'eseguibile per Windows (vedi distribuzione/).
+# Per usare o sviluppare FantaMagazine basta requirements.txt.
+-r requirements.txt
+pyinstaller>=6.10

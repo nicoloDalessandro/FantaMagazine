@@ -1,0 +1,55 @@
+FantaMagazine
+=============
+
+La prima pagina di un quotidiano sportivo, dalla tua lega di Leghe Fantacalcio.
+
+
+Come si avvia
+-------------
+
+1. Estrai tutto il contenuto dello ZIP in una cartella qualunque (per esempio
+   sul Desktop). FantaMagazine.exe e la cartella _internal devono restare
+   insieme: l'eseguibile da solo non parte.
+2. Doppio clic su FantaMagazine.exe.
+3. Si apre una finestra nera con l'indirizzo della redazione, e subito dopo il
+   browser sulla pagina. Se il browser non si apre da solo, copia l'indirizzo
+   che vedi nella finestra (di solito http://127.0.0.1:8765).
+4. Per chiudere la redazione, chiudi la finestra nera o premi Ctrl+C.
+
+Al primo avvio Windows puo' avvisare che il programma non e' riconosciuto: il
+file non e' firmato con un certificato a pagamento. Su "Altre informazioni" ->
+"Esegui comunque" parte.
+
+
+Dove finiscono i tuoi dati
+--------------------------
+
+Tutto resta in questa cartella, accanto all'eseguibile: niente server, niente
+account da creare, nessun dato che esce da questo computer se non verso Leghe
+Fantacalcio e - se la usi - verso Gemini.
+
+  .fanta_leghe.json          il token di ogni tua lega
+  .fanta_utente.json         il tuo id utente e il suo token
+  .fanta_impostazioni.json   leghe, competizioni e nome del giornale
+  .gemini_key                la chiave di Gemini, se la inserisci
+  .cache\                    storico delle giornate e bozze delle immagini
+  prime_pagine\              le immagini che scegli di salvare
+
+La tua password non viene mai salvata: serve solo alla chiamata di accesso.
+Per cancellare tutto, cancella questa cartella.
+
+Se metti FantaMagazine in una cartella dove Windows non lascia scrivere (per
+esempio Programmi), i dati vanno invece in %LOCALAPPDATA%\FantaMagazine.
+
+
+Avvertenze
+----------
+
+Progetto open source a fini didattici e ricreativi, senza alcun rapporto con
+Fantacalcio S.r.l.: non e' un prodotto ufficiale, non e' approvato ne'
+autorizzato da Fantacalcio. Usandolo con il tuo account, sei tu a eseguirlo sul
+tuo computer, e sei tu responsabile del rispetto dei Termini di Utilizzo di
+Fantacalcio: https://www.fantacalcio.it/termini-e-condizioni
+
+Il disclaimer completo, le istruzioni dettagliate e il codice sorgente stanno
+nel README del progetto, dentro lo stesso ZIP.

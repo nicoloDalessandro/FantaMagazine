@@ -1,4 +1,4 @@
-# FantaProject
+# FantaMagazine
 
 Genera la prima pagina di un quotidiano sportivo a partire dall'ultima giornata
 disputata della tua lega su [leghe.fantacalcio.it](https://leghe.fantacalcio.it):
@@ -8,7 +8,42 @@ Funziona con qualunque account: entri con le tue credenziali di Leghe
 Fantacalcio, scegli quali leghe e competizioni usare e dai un nome al giornale
 di ciascuna.
 
-## Il modo più semplice: la redazione
+> **Progetto non ufficiale, a fini didattici e ricreativi.** FantaMagazine non
+> è affiliato, sponsorizzato, approvato né autorizzato da Fantacalcio S.r.l., e
+> non è un servizio online: gira sul tuo computer, con il tuo account. Prima di
+> usarlo leggi il [Disclaimer](#disclaimer) e i
+> [Termini di Utilizzo di Fantacalcio](https://www.fantacalcio.it/termini-e-condizioni).
+
+Si usa in due modi: **scaricando l'eseguibile per Windows**, se vuoi soltanto
+vedere la tua prima pagina, o **dal codice sorgente**, se vuoi metterci mano.
+
+## Windows: scarica ed esegui
+
+Chi non ha Python e non vuole installarlo può prendere l'ultima versione dalla
+pagina [Releases](../../releases) del progetto:
+
+1. scarica `FantaMagazine-Windows-vX.Y.Z.zip`;
+2. **estrai tutto lo ZIP** in una cartella qualunque - il Desktop va benissimo.
+   `FantaMagazine.exe` e la cartella `_internal` devono restare insieme:
+   l'eseguibile spostato da solo non parte;
+3. doppio clic su `FantaMagazine.exe`. Si apre una finestra nera con
+   l'indirizzo della redazione, e subito dopo il browser sulla pagina;
+4. per chiudere: chiudi la finestra nera, o premi Ctrl+C.
+
+Al primo avvio Windows può avvisare che il programma non è riconosciuto: il file
+non è firmato con un certificato a pagamento. Su «Altre informazioni» →
+«Esegui comunque» parte.
+
+L'eseguibile non è un'installazione: non tocca il registro, non aggiunge voci al
+menu Start, non parte da solo all'accensione. Tutto quello che scrive resta
+nella sua cartella (vedi [Dove finiscono i tuoi dati](#dove-finiscono-i-tuoi-dati)),
+e per disfarsene basta cancellarla.
+
+Se la porta 8765 è già occupata - la redazione aperta due volte, o un altro
+programma - ne prova una più avanti e lo scrive nella finestra: l'indirizzo
+giusto è sempre quello che leggi lì.
+
+## Dal codice sorgente: la redazione
 
 ```bash
 python app.py
@@ -75,6 +110,13 @@ fallisce il prompt è già lì, e il percorso dell'immagine salvata va su stderr
 ### Le prove
 
 ```bash
+python prove.py           # tutte, una per file: è il comando che usa anche la CI
+python prove.py gemini    # solo i file il cui nome contiene «gemini»
+```
+
+Ogni file resta eseguibile da solo:
+
+```bash
 python test_accesso.py    # accesso: richiesta, risposte, errori, nessuna password salvata
 python test_impostazioni.py # leghe, competizioni e testate scelte dall'utente
 python test_listone.py    # cache del listone e ricarico automatico
@@ -84,9 +126,12 @@ python test_menu.py       # menu di scelta della riga di comando
 python test_prompt.py     # struttura, angoli, lingua e classifica del prompt
 python test_web.py        # interfaccia web: difese, validazione, errori
 python test_gemini.py     # integrazione con Gemini, con risposte simulate
+python test_distribuzione.py # avvio, percorsi dei dati, cancelli della release
 ```
 
-Nessuna prova usa la rete, Chrome o un account vero.
+Nessuna prova usa la rete, Chrome o un account vero. Girano a ogni spinta e a
+ogni pull request su GitHub (`.github/workflows/ci.yml`), su Windows, che è il
+sistema per cui esiste l'eseguibile.
 
 ## Installazione
 
@@ -133,6 +178,32 @@ password non ce l'ha (vedi sotto):
 ```bash
 uv tool install --python 3.12 browser-harness
 ```
+
+
+## Dove finiscono i tuoi dati
+
+Non c'è un server: quello che l'app sa sta tutto sul tuo computer, in file che
+puoi leggere e cancellare. Dal codice sorgente stanno nella cartella del
+progetto; nell'eseguibile, accanto a `FantaMagazine.exe`.
+
+| File o cartella | Contenuto | Si rifà? |
+|---|---|---|
+| `.fanta_leghe.json` | Il token di ogni lega | Sì, rientrando |
+| `.fanta_utente.json` | Id, nome utente e token dell'utente | Sì, rientrando |
+| `.fanta_impostazioni.json` | Leghe e competizioni scelte, testate, modello e risoluzione | Sì, riscegliendo |
+| `.gemini_key` | La chiave di Gemini, se la inserisci | Sì, reincollandola |
+| `.cache/giornate/` | Le formazioni delle giornate passate | Sì, si riscarica |
+| `.cache/listone/` | I nomi dei giocatori | Sì, si riscarica |
+| `.cache/immagini/` | Le bozze delle immagini generate | No: sono bozze |
+| `prime_pagine/` | Le immagini che scegli di salvare | No |
+
+**La tua password non viene mai salvata**: serve solo alla chiamata di accesso.
+Nessuno di questi file entra in git (`.gitignore`) né nello ZIP della release,
+e il controllo prima della pubblicazione lo verifica.
+
+Se metti l'eseguibile dove Windows non lascia scrivere - `C:\Programmi`, per
+dire - i dati andrebbero persi a ogni avvio: in quel caso l'app se ne accorge e
+li mette in `%LOCALAPPDATA%\FantaMagazine`.
 
 ## Accesso e scelte
 
@@ -395,6 +466,7 @@ dall'API, quindi qui non si usa alcun browser (se non per il token).
 
 ```
 app.py               interfaccia web (Flask, solo 127.0.0.1)
+launcher.py          avvio: apre la porta, poi il browser. Punto d'ingresso dell'exe
 web/
   templates/         la pagina
   static/            stile e JavaScript
@@ -415,6 +487,15 @@ fantamagazine/
   tendenze.py        memoria: strisce e ricorrenze
   resoconto.py       che cosa ricorda la memoria e che cosa usa la pagina
   prompt.py          la pagina come dati, poi come prompt
+distribuzione/
+  FantaMagazine.spec la ricetta di PyInstaller: cosa entra nel pacchetto
+  LEGGIMI.txt        le istruzioni che finiscono nello ZIP
+  versione.py        il tag di git e __version__ devono coincidere
+  controlla_zip.py   nello ZIP c'e' tutto il necessario e niente di personale
+.github/workflows/
+  ci.yml             le prove a ogni spinta
+  release.yml        dal tag allo ZIP pubblicato
+prove.py             esegue tutte le prove, una per file
 test_*.py            le prove
 ```
 
@@ -766,7 +847,79 @@ i dati osservati non bastano a separarli.
   ferma spiegando perche', invece di produrre numeri privi di senso.
 - Una squadra che non schiera affatto ha `starts` a None: viene trattata come
   formazione vuota, non fa piu' esplodere l'analisi.
+- **L'eseguibile è solo per Windows a 64 bit**, e non è firmato: al primo
+  avvio Windows avvisa che il programma non è riconosciuto. Una firma richiede
+  un certificato a pagamento. Su Mac e Linux il progetto si usa dal codice.
+- **L'eseguibile non si aggiorna da solo.** Per passare a una versione nuova si
+  scarica il nuovo ZIP; i dati restano, se si estrae nella stessa cartella.
 - **Il testo dentro l'immagine può contenere errori.** Gemini 3 Pro Image è il
   modello più affidabile con le scritte, ma resta un modello che disegna le
   lettere: un nome storpiato o un numero sbagliato vanno controllati a occhio
   prima di condividere la pagina.
+
+## Scope and limitations
+
+FantaMagazine è un programma che si esegue sul proprio computer, e questo
+definisce sia cosa fa sia cosa non può fare:
+
+- **non è un servizio centralizzato.** Non esiste un sito, un'API o un server
+  gestiti dall'autore a cui l'app si colleghi: ogni copia parla direttamente con
+  Leghe Fantacalcio, con l'account di chi la usa;
+- **l'autore non riceve i dati di nessuno.** Credenziali, token, scelte, cache e
+  immagini restano sul computer di chi esegue il programma (vedi
+  [Dove finiscono i tuoi dati](#dove-finiscono-i-tuoi-dati)). L'autore non
+  raccoglie, non conserva e non vede nulla di tutto questo;
+- **l'autore non fornisce account.** Serve un proprio account di Leghe
+  Fantacalcio, ottenuto per proprio conto;
+- **il funzionamento dipende da servizi di terze parti** - le API di Leghe
+  Fantacalcio e, per le immagini, quelle di Google Gemini. Non sono governate da
+  questo progetto;
+- **quei servizi possono cambiare senza preavviso.** Un endpoint che cambia
+  forma, un campo che sparisce, una risposta diversa: basta questo perché una
+  funzionalità smetta di funzionare. Non c'è alcuna garanzia che ciò che
+  funziona oggi funzioni domani;
+- la generazione delle immagini con Gemini **è a pagamento** e la spesa è di chi
+  usa la propria chiave. Nessun modello per immagini ha un piano gratuito;
+- i limiti di ciò che il programma sa raccontare sono elencati in
+  [Limiti noti](#limiti-noti); il codice è fornito «così com'è», secondo la
+  licenza [MIT](LICENSE).
+
+## Disclaimer
+
+FantaMagazine è un progetto **open source**, sviluppato per finalità
+**didattiche, di studio e ricreative**, pensato per essere eseguito
+**localmente** sul computer di chi lo utilizza.
+
+**Non è un prodotto ufficiale di Fantacalcio.** Il progetto non è affiliato,
+sponsorizzato, approvato né autorizzato da Fantacalcio S.r.l. o da società a
+essa collegate, e non deve essere presentato come ufficialmente associato a
+Fantacalcio. I marchi citati appartengono ai rispettivi titolari e sono
+richiamati unicamente per descrivere con quale servizio il programma
+interagisce.
+
+**Non è un servizio online gestito dall'autore.** L'autore non mette a
+disposizione alcun servizio, sito o API: chi utilizza FantaMagazine lo esegue
+nel proprio ambiente locale, con il proprio account, e resta l'unico
+responsabile dell'uso che ne fa.
+
+**L'autore non fornisce account di Fantacalcio** e **non raccoglie le
+credenziali degli utenti** attraverso un proprio servizio centralizzato: le
+credenziali servono unicamente alla chiamata di accesso verso Leghe
+Fantacalcio, non vengono salvate e non transitano da alcun sistema dell'autore.
+
+**Termini di Utilizzo.** Chi utilizza FantaMagazine è tenuto a prendere visione
+e a rispettare i Termini di Utilizzo di Fantacalcio, disponibili qui:
+<https://www.fantacalcio.it/termini-e-condizioni>. Quei Termini possono essere
+modificati nel tempo: è onere di chi utilizza il programma verificare la
+versione vigente. Questo progetto non incoraggia né intende agevolare attività
+che violino tali Termini; qualora un determinato utilizzo richieda, secondo i
+Termini, un'autorizzazione del titolare del servizio, tale utilizzo deve essere
+effettuato soltanto dopo aver ottenuto quell'autorizzazione.
+
+**Servizi di terze parti.** Il programma interagisce con servizi non governati
+dall'autore - le API di Leghe Fantacalcio e quelle di Google Gemini - e viene
+fornito senza garanzie circa la loro disponibilità, il loro comportamento
+futuro o la persistenza delle funzionalità che su di essi si appoggiano.
+
+Il software è distribuito secondo la licenza [MIT](LICENSE), che ne disciplina
+condizioni d'uso e limitazioni di garanzia.

@@ -6,9 +6,45 @@ I valori possono essere sovrascritti da variabili d'ambiente (prefisso FANTA_).
 from __future__ import annotations
 
 import os
+import sys
+import tempfile
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+from . import __version__
+
+# Vero quando l'app gira come eseguibile costruito con PyInstaller.
+CONGELATO = bool(getattr(sys, "frozen", False))
+
+# Le risorse in sola lettura - le pagine e i fogli di stile della redazione -
+# viaggiano dentro il pacchetto, che PyInstaller scompatta dove decide lui.
+RISORSE = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
+
+
+def _cartella_dati() -> Path:
+    """Dove finiscono token, scelte, chiave e cache.
+
+    Da sorgente e' la cartella del progetto, come e' sempre stato. Nell'eseguibile
+    e' la cartella dell'.exe: tutto resta insieme allo ZIP appena estratto, e per
+    disfarsene basta cancellare quella cartella. Se pero' l'app e' stata messa
+    dove Windows non lascia scrivere (Programmi, per dire), i dati andrebbero
+    persi a ogni avvio: in quel caso si ripiega sui dati locali dell'utente.
+    """
+    if not CONGELATO:
+        return Path(__file__).resolve().parent.parent
+
+    accanto = Path(sys.executable).resolve().parent
+    try:
+        with tempfile.TemporaryFile(dir=accanto):
+            return accanto
+    except OSError:
+        pass
+
+    riserva = Path(os.getenv("LOCALAPPDATA") or Path.home()) / "FantaMagazine"
+    riserva.mkdir(parents=True, exist_ok=True)
+    return riserva
+
+
+ROOT = _cartella_dati()
 
 # --- Leghe ------------------------------------------------------------------
 # Le leghe non sono cablate: arrivano con l'accesso dell'utente. Questo alias
@@ -54,4 +90,4 @@ ARCHIVIO_DIR = Path(os.getenv("FANTA_ARCHIVIO", ROOT / "prime_pagine"))
 
 # --- Rete -------------------------------------------------------------------
 TIMEOUT = float(os.getenv("FANTA_TIMEOUT", "30"))
-USER_AGENT = "FantaMagazine/1.0"
+USER_AGENT = f"FantaMagazine/{__version__}"

@@ -1,0 +1,114 @@
+# Dal tag allo ZIP pubblicato.
+#
+#   git tag v1.0.0 && git push origin v1.0.0
+#     -> prove
+#     -> eseguibile Windows con PyInstaller
+#     -> FantaMagazine-Windows-v1.0.0.zip
+#     -> allegato alla release del tag
+#
+# Le prove stanno in un job a parte: se una fallisce, il pacchetto non viene
+# nemmeno costruito, e non c'e' modo che finisca in una release.
+name: release
+
+on:
+  push:
+    # Solo i tag di versione: un tag qualunque non pubblica niente.
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+
+# Per difetto sola lettura. Solo il job che pubblica alza il permesso, e solo
+# quello di cui ha bisogno: nessun altro passo puo' scrivere sul repository.
+permissions:
+  contents: read
+
+jobs:
+  prove:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Recupera il codice
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Prepara Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Installa le dipendenze
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Esegui le prove
+        run: python prove.py
+
+  pacchetto:
+    needs: prove
+    runs-on: windows-latest
+    timeout-minutes: 30
+    permissions:
+      # Serve a creare la release e ad allegarle lo ZIP. Nient'altro.
+      contents: write
+    env:
+      # Il nome del tag passa da una variabile d'ambiente e non da ${{ }} dentro
+      # i comandi: cosi' il suo testo resta un valore e non diventa codice da
+      # eseguire nella shell.
+      TAG: ${{ github.ref_name }}
+    steps:
+      - name: Recupera il codice
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Prepara Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Installa le dipendenze e PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Il tag e la versione dell'app devono coincidere
+        run: python distribuzione/versione.py "$env:TAG"
+
+      - name: Costruisci l'eseguibile
+        run: pyinstaller distribuzione/FantaMagazine.spec --noconfirm --clean
+
+      - name: Prepara lo ZIP
+        run: |
+          Copy-Item README.md, LICENSE, distribuzione/LEGGIMI.txt dist/FantaMagazine/
+          Compress-Archive -Path dist/FantaMagazine -DestinationPath "FantaMagazine-Windows-$env:TAG.zip"
+
+      # Il controllo che nessuno farebbe a mano su duemila file: ci sono
+      # l'eseguibile e le pagine della redazione, e non c'e' dentro niente di
+      # personale - credenziali, token, chiavi, cache.
+      - name: Ispeziona lo ZIP
+        run: python distribuzione/controlla_zip.py "FantaMagazine-Windows-$env:TAG.zip"
+
+      # Anche se la pubblicazione fallisse, lo ZIP resta scaricabile da qui.
+      - name: Conserva lo ZIP fra gli artefatti
+        uses: actions/upload-artifact@v4
+        with:
+          name: FantaMagazine-Windows-${{ github.ref_name }}
+          path: FantaMagazine-Windows-${{ github.ref_name }}.zip
+          if-no-files-found: error
+
+      - name: Allega lo ZIP alla release
+        env:
+          # Il token effimero del workflow, non una credenziale personale.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $zip = "FantaMagazine-Windows-$env:TAG.zip"
+          # La release puo' esistere gia', se e' stata scritta a mano su GitHub:
+          # in quel caso si aggiunge il file invece di creare un doppione.
+          gh release view "$env:TAG" --json tagName | Out-Null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload "$env:TAG" "$zip" --clobber
+          } else {
+            gh release create "$env:TAG" "$zip" --title "FantaMagazine $env:TAG" --generate-notes --verify-tag
+          }

@@ -1,0 +1,45 @@
+# Le prove a ogni spinta e a ogni pull request.
+#
+# Girano su Windows perche' e' il sistema per cui esiste l'eseguibile: provare
+# altrove darebbe una certezza su una piattaforma che nessuno scarica.
+name: prove
+
+on:
+  push:
+    # Solo i rami: un tag non fa scattare queste prove, perche' le rifa' da solo
+    # release.yml prima di costruire il pacchetto.
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+# Solo lettura: queste prove non pubblicano niente e non toccano il repository.
+permissions:
+  contents: read
+
+jobs:
+  prove:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Recupera il codice
+        uses: actions/checkout@v4
+        with:
+          # Niente token di git lasciato sul disco del runner: qui non si spinge.
+          persist-credentials: false
+
+      - name: Prepara Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Installa le dipendenze
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # Nessuna prova usa la rete, Chrome o un account vero: non serve alcun
+      # segreto, e non ne viene messo a disposizione.
+      - name: Esegui le prove
+        run: python prove.py

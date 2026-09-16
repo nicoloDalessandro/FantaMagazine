@@ -14,17 +14,16 @@ from __future__ import annotations
 
 import argparse
 import logging
-import threading
-import webbrowser
 from dataclasses import asdict
-from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request, send_file
 from werkzeug.exceptions import HTTPException
 
-from fantamagazine import gemini, servizio
+from fantamagazine import config, gemini, servizio
 
-RADICE = Path(__file__).resolve().parent
+# Le pagine e i fogli di stile: nell'eseguibile stanno dentro il pacchetto,
+# non accanto a questo file.
+RADICE = config.RISORSE
 INDIRIZZO = "127.0.0.1"
 PORTA_PREDEFINITA = 8765
 
@@ -352,17 +351,12 @@ def main() -> int:
     parser.add_argument("--no-browser", action="store_true", help="Non aprire il browser")
     argomenti = parser.parse_args()
 
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
-    indirizzo = f"http://{INDIRIZZO}:{argomenti.porta}"
-    print(f"\n  La redazione è aperta su {indirizzo}\n  Ctrl+C per chiudere.\n")
+    # L'avvio vero e proprio sta in launcher.py, lo stesso che usa l'eseguibile
+    # per Windows: una strada sola, provata in un modo solo. Importato qui dentro
+    # e non in cima perche' launcher a sua volta importa questo modulo.
+    from launcher import avvia
 
-    if not argomenti.no_browser:
-        threading.Timer(1.0, webbrowser.open, args=(indirizzo,)).start()
-
-    # threaded: la generazione a cache fredda o il rinnovo dei token possono
-    # richiedere secondi, e non devono bloccare il resto dell'interfaccia.
-    crea_app().run(host=INDIRIZZO, port=argomenti.porta, debug=False, threaded=True)
-    return 0
+    return avvia(argomenti.porta, not argomenti.no_browser)
 
 
 if __name__ == "__main__":
