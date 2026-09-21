@@ -32,8 +32,10 @@ from . import (
     gemini,
     impostazioni,
     listone,
+    modelli_testo,
     prompt,
     resoconto,
+    scrittura_ai,
     storico,
     tendenze,
 )
@@ -90,6 +92,17 @@ class ErroreServizio(Exception):
         "gemini_tempo_scaduto": 504,
         "gemini_rete": 503,
         "gemini_servizio": 502,
+        "testo_chiave_mancante": 412,
+        "testo_chiave_non_valida": 401,
+        "testo_permesso": 403,
+        "testo_quota": 429,
+        "testo_modello_non_disponibile": 404,
+        "testo_bloccata": 422,
+        "testo_risposta_non_valida": 502,
+        "testo_richiesta_non_valida": 400,
+        "testo_tempo_scaduto": 504,
+        "testo_rete": 503,
+        "testo_servizio": 502,
     }
 
     def __init__(self, messaggio: str, codice: str) -> None:
@@ -292,6 +305,11 @@ def genera(
     oggi: date | None = None,
     su_log: Log | None = None,
     apertura: str | None = None,
+    scrittura: str = "classica",
+    fornitore: str | None = None,
+    modello_testo: str | None = None,
+    indicazioni: str = "",
+    precedente: str = "",
 ) -> Risultato:
     """Genera la prima pagina di una giornata. Solleva ErroreServizio.
 
@@ -302,7 +320,24 @@ def genera(
     `apertura` è il nome di una delle due squadre di una partita della
     giornata: quella partita va in prima pagina, nel titolo e nel racconto.
     Senza, la pagina la sceglie da sola.
+
+    Con `scrittura="ai"` i testi li scrive il modello scelto (per difetto quello
+    delle impostazioni), sugli stessi fatti, seguendo le `indicazioni` di chi
+    usa l'app. `varia` chiede una versione nuova; senza, una richiesta identica
+    riusa l'ultima versione scritta. `precedente` è il titolo della versione a
+    schermo, perché quella nuova lo cambi davvero.
     """
+    if scrittura not in ("classica", "ai"):
+        raise ErroreServizio("La scrittura può essere «classica» o «ai».", "parametri")
+    scrittore = None
+    if scrittura == "ai":
+        # Prima di qualunque chiamata a Fantacalcio: un modello sbagliato o una
+        # chiave mancante si scoprono subito, non dopo aver scaricato la giornata.
+        try:
+            scrittore = impostazioni.testo_scelto(fornitore, modello_testo)
+            modelli_testo.carica_chiave(scrittore[0])
+        except modelli_testo.ErroreTesto as errore:
+            raise ErroreServizio(errore.messaggio, f"testo_{errore.codice}") from None
     log = su_log or (lambda _messaggio: None)
     avvisi: list[str] = []
     lega = _lega(alias)
@@ -441,17 +476,39 @@ def genera(
             )
         log(f"apertura scelta: {gara.casa.squadra} - {gara.trasferta.squadra}")
 
-    pagina = prompt.componi(
-        partite=partite,
-        tabella=tabella,
-        giornata=fino_a,
-        stagione=stagione(oggi),
-        data=data_estesa(oggi),
-        testata=testata,
-        memoria=memoria,
-        seme=seme,
-        apertura=gara,
-    )
+    if scrittore is not None:
+        voce, modello = scrittore
+        log(f"scrittura: {voce.nome}, {modello}" + (" (versione nuova)" if varia else ""))
+        try:
+            pagina = scrittura_ai.componi(
+                partite,
+                tabella,
+                fino_a,
+                stagione(oggi),
+                data_estesa(oggi),
+                testata,
+                memoria,
+                voce.id,
+                modello,
+                apertura=gara,
+                indicazioni=indicazioni,
+                precedente=precedente,
+                nuova=varia,
+            )
+        except modelli_testo.ErroreTesto as errore:
+            raise ErroreServizio(errore.messaggio, f"testo_{errore.codice}") from None
+    else:
+        pagina = prompt.componi(
+            partite=partite,
+            tabella=tabella,
+            giornata=fino_a,
+            stagione=stagione(oggi),
+            data=data_estesa(oggi),
+            testata=testata,
+            memoria=memoria,
+            seme=seme,
+            apertura=gara,
+        )
     return Risultato(
         prompt=prompt.renderizza(pagina),
         pagina=pagina,
@@ -751,6 +808,85 @@ def salva_impostazioni_immagine(modello: str, dimensione: str) -> None:
             "impostazioni_non_valide",
         )
     impostazioni.salva_immagine(impostazioni.SceltaImmagine(modello=modello, dimensione=dimensione))
+
+
+# --- La scrittura con l'AI -------------------------------------------------------------
+_CHIAVE_TESTO = re.compile(r"[A-Za-z0-9_\-]{20,300}")
+
+
+def stato_testo() -> dict:
+    """Ciò che serve all'interfaccia per proporre la scrittura con l'AI. Mai una chiave."""
+    voce, modello = impostazioni.testo_scelto()
+    return {
+        "fornitore": voce.id,
+        "modello": modello,
+        "fornitori": [
+            {
+                "id": f.id,
+                "nome": f.nome,
+                "azienda": f.azienda,
+                "url_chiavi": f.url_chiavi,
+                "chiave_presente": modelli_testo.chiave_presente(f),
+                "chiave_da_ambiente": modelli_testo.chiave_da_ambiente(f),
+                # Gemini usa la stessa chiave delle immagini: la si gestisce lì.
+                "chiave_condivisa": f.id == "gemini",
+                "predefinito": f.predefinito,
+                "modelli": [
+                    {"id": m.id, "nome": m.nome, "nota": m.nota, "gratuito": m.gratuito}
+                    for m in f.modelli
+                ],
+            }
+            for f in modelli_testo.FORNITORI
+        ],
+    }
+
+
+def _fornitore_con_chiave_propria(identificativo: str) -> modelli_testo.Fornitore:
+    try:
+        voce = modelli_testo.fornitore(identificativo)
+    except modelli_testo.ErroreTesto as errore:
+        raise ErroreServizio(errore.messaggio, "parametri") from None
+    if voce.id == "gemini":
+        raise ErroreServizio(
+            "La chiave di Gemini è la stessa delle immagini: si salva da lì.", "parametri"
+        )
+    return voce
+
+
+def salva_chiave_testo(identificativo: str, chiave: str) -> None:
+    """Scrive la chiave di ChatGPT o di Claude nel suo file escluso da git."""
+    voce = _fornitore_con_chiave_propria(identificativo)
+    chiave = (chiave or "").strip()
+    if not _CHIAVE_TESTO.fullmatch(chiave):
+        raise ErroreServizio(
+            f"Questa non sembra una chiave di {voce.nome}: dovrebbe essere una riga sola di "
+            f"lettere, numeri, trattini e underscore. Copiala da {voce.url_chiavi}",
+            "testo_chiave_non_valida",
+        )
+    voce.file_chiave.write_text(chiave, encoding="utf-8")
+    try:
+        os.chmod(voce.file_chiave, 0o600)
+    except OSError:
+        pass
+
+
+def rimuovi_chiave_testo(identificativo: str) -> None:
+    """Cancella da questo computer la chiave di ChatGPT o di Claude."""
+    voce = _fornitore_con_chiave_propria(identificativo)
+    try:
+        voce.file_chiave.unlink()
+    except FileNotFoundError:
+        pass
+
+
+def salva_impostazioni_testo(fornitore: str, modello: str) -> None:
+    """Salva fornitore e modello predefiniti per la scrittura."""
+    try:
+        voce = modelli_testo.fornitore(fornitore)
+        voce.modello(modello)
+    except modelli_testo.ErroreTesto as errore:
+        raise ErroreServizio(errore.messaggio, "impostazioni_non_valide") from None
+    impostazioni.salva_testo(impostazioni.SceltaTesto(fornitore=voce.id, modello=modello))
 
 
 def _nome_file(lega: str, giornata: int | None, seme: int | None, estensione: str) -> str:

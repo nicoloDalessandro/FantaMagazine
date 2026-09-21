@@ -10,6 +10,7 @@ traduzione degli errori, il fatto che i token non escano mai dal server.
 from __future__ import annotations
 
 import contextlib
+import json
 import sys
 from pathlib import Path
 
@@ -196,6 +197,8 @@ def test_genera_passa_i_parametri() -> None:
     assert ricevuti == {
         "alias": "tana", "competizione": "12200", "giornata": 2,
         "seme": None, "varia": True, "usa_cache": True, "apertura": None,
+        "scrittura": "classica", "fornitore": None, "modello_testo": None,
+        "indicazioni": "", "precedente": "",
     }, ricevuti
     assert dati["prompt"] == "PROMPT"
     assert dati["pagina"]["classifica"][0]["fantapunti"] == 70.5
@@ -241,6 +244,91 @@ def test_genera_passa_la_partita_in_apertura() -> None:
     pagina = _client().get("/").get_data(as_text=True)
     assert 'id="apertura"' in pagina, "il menu della partita manca dalla pagina"
     print("  ok  apertura ripulita e passata al servizio; tipi storti 400, squadra ignota 404")
+
+
+def test_genera_con_la_scrittura_ai() -> None:
+    """I parametri della scrittura arrivano ripuliti; quelli storti si fermano prima."""
+    ricevuti = []
+
+    def finto(alias, competizione, **opzioni):
+        ricevuti.append(opzioni)
+        return servizio.Risultato(
+            prompt="PROMPT", pagina=_pagina_finta(), lega=alias, nome_lega="Tana",
+            competizione=competizione, nome_competizione="Campionato",
+        )
+
+    base = {"lega": "tana", "competizione": "1"}
+    with _sostituisci(servizio, genera=finto):
+        client = _client()
+        risposta = client.post("/api/genera", json={
+            **base, "scrittura": "ai", "fornitore": "claude", "modello_testo": "claude-sonnet-5",
+            "indicazioni": "  sii spietato  ", "precedente": "TITOLO VECCHIO", "varia": True,
+        })
+        assert risposta.status_code == 200, risposta.get_data(as_text=True)
+        opzioni = ricevuti[-1]
+        assert (opzioni["scrittura"], opzioni["fornitore"], opzioni["modello_testo"]) == (
+            "ai", "claude", "claude-sonnet-5"), opzioni
+        assert opzioni["indicazioni"] == "sii spietato" and opzioni["precedente"] == "TITOLO VECCHIO"
+        assert opzioni["varia"] is True
+
+        chiamate = len(ricevuti)
+        for storto in ({"scrittura": "poesia"}, {"scrittura": "ai", "fornitore": 3},
+                       {"scrittura": "ai", "indicazioni": "x" * 601},
+                       {"scrittura": "ai", "precedente": ["TITOLO"]},
+                       {"scrittura": "ai", "modello_testo": "m" * 81}):
+            risposta = client.post("/api/genera", json={**base, **storto})
+            assert risposta.status_code == 400, (storto, risposta.status_code)
+        assert len(ricevuti) == chiamate, "una richiesta storta è arrivata al servizio"
+
+    def senza_chiave(*_argomenti, **_opzioni):
+        raise servizio.ErroreServizio("Manca la chiave di Claude.", "testo_chiave_mancante")
+
+    with _sostituisci(servizio, genera=senza_chiave):
+        risposta = _client().post("/api/genera", json={**base, "scrittura": "ai"})
+    assert risposta.status_code == 412 and risposta.get_json()["codice"] == "testo_chiave_mancante"
+    print("  ok  scrittura AI: parametri ripuliti e passati, tipi e lunghezze storte rifiutati")
+
+
+def test_chiavi_della_scrittura_dal_web() -> None:
+    """Le chiavi si salvano e si cancellano; nessuna risposta le contiene, nemmeno in parte."""
+    from test_scrittura_ai import CHIAVE_ANTHROPIC, CHIAVE_OPENAI, _chiavi
+
+    with _chiavi() as cartella:
+        client = _client()
+        risposta = client.post("/api/testo", json={
+            "chiavi": {"chatgpt": f"  {CHIAVE_OPENAI}  ", "claude": CHIAVE_ANTHROPIC},
+            "fornitore": "gemini", "modello": "gemini-3.5-flash-lite",
+        })
+        assert risposta.status_code == 200, risposta.get_data(as_text=True)
+        assert (cartella / ".openai_key").read_text(encoding="utf-8") == CHIAVE_OPENAI
+        assert (cartella / ".anthropic_key").read_text(encoding="utf-8") == CHIAVE_ANTHROPIC
+
+        stato = client.get("/api/testo").get_json()
+        testo = json.dumps(stato)
+        for chiave in (CHIAVE_OPENAI, CHIAVE_ANTHROPIC):
+            assert chiave not in testo and chiave[:14] not in testo, "una chiave è tornata alla pagina"
+        presenti = {f["id"]: f["chiave_presente"] for f in stato["fornitori"]}
+        assert presenti == {"chatgpt": True, "claude": True, "gemini": False}, presenti
+        assert (stato["fornitore"], stato["modello"]) == ("gemini", "gemini-3.5-flash-lite")
+
+        for corpo, codice in (
+            ({"chiavi": {"claude": "corta"}}, "testo_chiave_non_valida"),
+            ({"chiavi": {"claude": "con spazi in mezzo alla chiave"}}, "testo_chiave_non_valida"),
+            ({"chiavi": {"gemini": CHIAVE_OPENAI}}, "parametri"),
+            ({"chiavi": {"bard": CHIAVE_OPENAI}}, "parametri"),
+            ({"chiavi": ["claude"]}, "parametri"),
+            ({"fornitore": "claude", "modello": "gpt-6-astra"}, "impostazioni_non_valide"),
+        ):
+            risposta = client.post("/api/testo", json=corpo)
+            assert risposta.status_code in (400, 401), (corpo, risposta.status_code)
+            assert risposta.get_json()["codice"] == codice, (corpo, risposta.get_json())
+        assert (cartella / ".anthropic_key").read_text(encoding="utf-8") == CHIAVE_ANTHROPIC, \
+            "una chiave storta ha preso il posto di quella buona"
+
+        risposta = client.post("/api/testo/rimuovi-chiave", json={"fornitore": "chatgpt"})
+        assert risposta.status_code == 200 and not (cartella / ".openai_key").exists()
+        assert client.post("/api/testo/rimuovi-chiave", json={"fornitore": "gemini"}).status_code == 400
+    print("  ok  chiavi di ChatGPT e Claude salvate e cancellate, mai rimandate alla pagina")
 
 
 def test_genera_restituisce_la_memoria() -> None:

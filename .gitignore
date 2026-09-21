@@ -5,6 +5,8 @@ credentials
 .fanta_utente.json
 *.json.tmp
 .gemini_key
+.openai_key
+.anthropic_key
 .env
 
 # Scelte personali: leghe, competizioni e testate di chi usa l'app

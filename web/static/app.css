@@ -468,6 +468,7 @@ body {
 }
 
 select,
+textarea,
 input[type="number"],
 input[type="search"],
 input[type="text"],
@@ -486,7 +487,20 @@ select:disabled {
   cursor: not-allowed;
 }
 
+textarea {
+  resize: vertical;
+  min-height: 4.5em;
+  line-height: 1.4;
+}
+
+.pannello-ai {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
 /* Un suggerimento non deve sembrare un valore già scritto. */
+textarea::placeholder,
 input::placeholder {
   color: var(--inchiostro-3);
   font-style: italic;

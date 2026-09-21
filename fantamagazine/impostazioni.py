@@ -1,4 +1,4 @@
-"""Le scelte dell'utente: leghe, competizioni, testate e modello per le immagini.
+"""Le scelte dell'utente: leghe, competizioni, testate, modelli per immagini e testi.
 
 Stanno in `.fanta_impostazioni.json`, escluso da git: non sono segrete, ma sono
 personali quanto i token. Per difetto tutto è attivo e la testata si ricava dal
@@ -16,7 +16,7 @@ import os
 import re
 from dataclasses import asdict, dataclass, field
 
-from . import config, gemini
+from . import config, gemini, modelli_testo
 
 MASSIMO_TESTATA = 60
 
@@ -27,6 +27,14 @@ class SceltaImmagine:
 
     modello: str = ""
     dimensione: str = ""
+
+
+@dataclass
+class SceltaTesto:
+    """Chi scrive la pagina quando la si fa scrivere a un modello: fornitore e modello."""
+
+    fornitore: str = ""
+    modello: str = ""
 
 
 @dataclass
@@ -140,3 +148,47 @@ def testata(alias: str, nome_lega: str = "") -> str:
     if forzata:
         return forzata
     return scelta(alias).testata or testata_predefinita(nome_lega or alias)
+
+
+# --- La scrittura con l'AI -------------------------------------------------------------
+def testo() -> SceltaTesto:
+    """Fornitore e modello scelti per la scrittura, se sono stati scelti."""
+    voce = _documento().get("testo")
+    if not isinstance(voce, dict):
+        return SceltaTesto()
+    return SceltaTesto(fornitore=str(voce.get("fornitore") or ""), modello=str(voce.get("modello") or ""))
+
+
+def salva_testo(scelta_testo: SceltaTesto) -> None:
+    """Salva fornitore e modello, lasciando intatto il resto del file."""
+    documento = _documento()
+    documento["testo"] = asdict(scelta_testo)
+    _scrivi(documento)
+
+
+def testo_scelto(
+    fornitore: str | None = None, modello: str | None = None
+) -> tuple[modelli_testo.Fornitore, str]:
+    """Il fornitore e il modello da usare: quelli chiesti, poi quelli salvati, poi i predefiniti.
+
+    Un modello salvato vale solo per il suo fornitore: chiedere Gemini senza dire
+    quale modello non deve portarsi dietro un modello di Claude salvato prima.
+    Solleva ErroreTesto se fornitore o modello non esistono.
+    """
+    salvata = testo()
+    # Una scelta salvata che non esiste più - un modello ritirato dal listino -
+    # non deve bloccare la redazione: si torna al predefinito. Una scelta
+    # esplicita sbagliata, invece, si segnala.
+    try:
+        voce = modelli_testo.fornitore(
+            fornitore or salvata.fornitore or modelli_testo.FORNITORE_PREDEFINITO
+        )
+    except modelli_testo.ErroreTesto:
+        if fornitore:
+            raise
+        voce = modelli_testo.fornitore(modelli_testo.FORNITORE_PREDEFINITO)
+    if modello:
+        return voce, voce.modello(modello).id
+    if salvata.fornitore == voce.id and salvata.modello in {m.id for m in voce.modelli}:
+        return voce, salvata.modello
+    return voce, voce.predefinito

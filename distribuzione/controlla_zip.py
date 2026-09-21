@@ -39,6 +39,8 @@ NECESSARI = (
 VIETATI = (
     "credentials",
     ".gemini_key",
+    ".openai_key",
+    ".anthropic_key",
     ".env",
     ".fanta_token",
     ".fanta_leghe",

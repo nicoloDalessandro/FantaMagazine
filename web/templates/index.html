@@ -138,6 +138,56 @@
       </p>
     </section>
 
+    <section class="scheda-impostazioni" aria-labelledby="titolo-scrittura-ai">
+      <h2 class="occhiello" id="titolo-scrittura-ai">Scrittura con l'AI</h2>
+      <p class="nota">
+        Facoltativa: al posto del redattore classico, i testi della pagina li scrive un modello,
+        sugli stessi fatti. I dati della giornata — squadre, risultati, marcatori, classifica —
+        vengono inviati al fornitore scelto, con la tua chiave e a tue spese.
+      </p>
+
+      <label class="gruppo">
+        <span class="gruppo__titolo">Chiave di ChatGPT (OpenAI)</span>
+        <input type="password" id="chiave-chatgpt" autocomplete="off" spellcheck="false"
+               maxlength="300" placeholder="Incolla qui la chiave">
+        <span class="nota" id="stato-chiave-chatgpt"></span>
+      </label>
+      <div class="azioni-esito__gruppo">
+        <a class="pulsante pulsante--leggero" href="https://platform.openai.com/api-keys"
+           target="_blank" rel="noopener noreferrer">Crea una chiave OpenAI</a>
+        <button type="button" class="pulsante pulsante--leggero" id="rimuovi-chiave-chatgpt">
+          Rimuovi la chiave
+        </button>
+      </div>
+
+      <label class="gruppo">
+        <span class="gruppo__titolo">Chiave di Claude (Anthropic)</span>
+        <input type="password" id="chiave-claude" autocomplete="off" spellcheck="false"
+               maxlength="300" placeholder="Incolla qui la chiave">
+        <span class="nota" id="stato-chiave-claude"></span>
+      </label>
+      <div class="azioni-esito__gruppo">
+        <a class="pulsante pulsante--leggero" href="https://console.anthropic.com/settings/keys"
+           target="_blank" rel="noopener noreferrer">Crea una chiave Anthropic</a>
+        <button type="button" class="pulsante pulsante--leggero" id="rimuovi-chiave-claude">
+          Rimuovi la chiave
+        </button>
+      </div>
+
+      <p class="nota" id="stato-chiave-gemini-testo"></p>
+
+      <label class="gruppo">
+        <span class="gruppo__titolo">Modello predefinito per la scrittura</span>
+        <select id="modello-testo-predefinito"></select>
+        <span class="nota" id="nota-modello-testo-predefinito"></span>
+      </label>
+
+      <p class="nota">
+        Le chiavi finiscono nei file <code>.openai_key</code> e <code>.anthropic_key</code>,
+        esclusi da git, e non vengono mai rimandate alla pagina.
+      </p>
+    </section>
+
     <div class="impostazioni__azioni">
       <button type="button" class="pulsante pulsante--primario" id="salva-app">Salva</button>
       <button type="button" class="pulsante pulsante--leggero" id="chiudi-app">Torna alla redazione</button>
@@ -179,6 +229,32 @@
       </div>
 
       <fieldset class="gruppo">
+        <legend class="gruppo__titolo">Chi scrive</legend>
+        <div class="segmenti" role="radiogroup">
+          <label class="segmento">
+            <input type="radio" name="autore" value="classica" checked>
+            <span>Il redattore</span>
+          </label>
+          <label class="segmento">
+            <input type="radio" name="autore" value="ai">
+            <span>Un modello AI</span>
+          </label>
+        </div>
+        <p class="nota" id="nota-autore"></p>
+        <div class="pannello-ai" id="pannello-ai" hidden>
+          <label class="nota" for="modello-testo">Modello</label>
+          <select id="modello-testo"></select>
+          <p class="nota" id="nota-modello-testo"></p>
+          <button type="button" class="pulsante pulsante--leggero" id="apri-impostazioni-ai" hidden>
+            Aggiungi la chiave nelle Impostazioni
+          </button>
+          <label class="nota" for="indicazioni">Indicazioni per il modello (facoltative)</label>
+          <textarea id="indicazioni" rows="3" maxlength="600"
+                    placeholder="es. usa un tono satirico, sii spietato con chi perde"></textarea>
+        </div>
+      </fieldset>
+
+      <fieldset class="gruppo">
         <legend class="gruppo__titolo">Scrittura</legend>
         <div class="segmenti" role="radiogroup">
           <label class="segmento">
@@ -191,7 +267,7 @@
           </label>
         </div>
         <p class="nota" id="nota-scrittura">Rigenerare la stessa giornata dà lo stesso testo.</p>
-        <details class="dettagli">
+        <details class="dettagli" id="dettagli-seme">
           <summary>Seme preciso</summary>
           <label class="nota" for="seme">Lo stesso seme riproduce la stessa versione.</label>
           <input type="number" id="seme" inputmode="numeric" min="0" placeholder="es. 42">

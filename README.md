@@ -66,6 +66,9 @@ l'accesso da questo computer.
   titolo diverso da quello a schermo.
 - **Seme preciso**: il seme usato compare sotto l'anteprima; riscriverlo
   riproduce esattamente quella versione.
+- **Chi scrive**: il redattore classico, gratis e con regole fisse, oppure un
+  modello AI a scelta fra ChatGPT, Claude e Gemini, con la tua chiave e le tue
+  indicazioni di tono (vedi [La scrittura con l'AI](#la-scrittura-con-lai)).
 - **Partita in apertura**: dopo aver generato la pagina, il menu propone le
   partite di quella giornata. Sceglierne una la mette in prima pagina — nel
   titolo e nel racconto — e la pagina si rigenera da sola; «Automatica» torna
@@ -95,6 +98,8 @@ python main.py > prompt.txt     # il menu resta a schermo, il prompt sul file
 python main.py --verbose        # diagnostica su stderr
 python main.py --giornata 3     # forza una giornata specifica
 python main.py --apertura "Bar Sport"  # la partita di questa squadra in prima pagina
+python main.py --ai claude      # i testi li scrive un modello (chatgpt, claude, gemini)
+python main.py --ai --modello-testo gemini-3.5-flash-lite --istruzioni "tono satirico"
 python main.py --varia          # riformula il pezzo a ogni esecuzione
 python main.py --seme 42        # riformula in modo riproducibile
 python main.py --memoria        # su stderr: cosa ricorda la memoria e cosa usa la pagina
@@ -132,6 +137,7 @@ python test_prompt.py     # struttura, angoli, lingua e classifica del prompt
 python test_web.py        # interfaccia web: difese, validazione, errori
 python test_gemini.py     # integrazione con Gemini, con risposte simulate
 python test_distribuzione.py # avvio, percorsi dei dati, cancelli della release
+python test_scrittura_ai.py  # scrittura con l'AI: fatti, risposte, cache, i tre fornitori
 ```
 
 Nessuna prova usa la rete, Chrome o un account vero. Girano a ogni spinta e a
@@ -140,7 +146,7 @@ sistema per cui esiste l'eseguibile.
 
 ## Installazione
 
-Serve Python 3.9 o più recente (qui è provato su 3.12). Dalla cartella del
+Serve Python 3.10 o più recente (qui è provato su 3.12). Dalla cartella del
 progetto, una volta sola, si crea l'ambiente virtuale:
 
 ```bash
@@ -160,8 +166,10 @@ con il Prompt dei comandi `.venv\Scripts\activate.bat`, su Mac e Linux
 pip install -r requirements.txt
 ```
 
-Le dipendenze sono due: `requests` per l'API e `flask` per la redazione. Anche
-Gemini si chiama con `requests`, senza librerie in più.
+Le dipendenze sono tre: `requests` per l'API, `flask` per la redazione e
+`anthropic`, l'SDK ufficiale con cui si chiama Claude quando scrive la pagina,
+come raccomanda Anthropic. Gemini e ChatGPT si chiamano con `requests`, senza
+librerie in più.
 
 **L'ambiente virtuale non sta in git**, quindi dopo un `git clone` su un altro
 computer va rifatto: senza, il primo avvio finisce con
@@ -196,10 +204,12 @@ progetto; nell'eseguibile, accanto a `FantaMagazine.exe`.
 | `.fanta_leghe.json` | Il token di ogni lega | Sì, rientrando |
 | `.fanta_utente.json` | Id, nome utente e token dell'utente | Sì, rientrando |
 | `.fanta_impostazioni.json` | Leghe e competizioni scelte, testate, modello e risoluzione | Sì, riscegliendo |
-| `.gemini_key` | La chiave di Gemini, se la inserisci | Sì, reincollandola |
+| `.gemini_key` | La chiave di Gemini, se la inserisci: vale per immagini e testi | Sì, reincollandola |
+| `.openai_key`, `.anthropic_key` | Le chiavi di ChatGPT e di Claude, se le inserisci | Sì, reincollandole |
 | `.cache/giornate/` | Le formazioni delle giornate passate | Sì, si riscarica |
 | `.cache/listone/` | I nomi dei giocatori | Sì, si riscarica |
 | `.cache/immagini/` | Le bozze delle immagini generate | No: sono bozze |
+| `.cache/scritture/` | L'ultima versione scritta da un modello per ogni richiesta | Sì, ma pagando di nuovo |
 | `prime_pagine/` | Le immagini che scegli di salvare | No |
 
 **La tua password non viene mai salvata**: serve solo alla chiamata di accesso.
@@ -301,6 +311,122 @@ Delle competizioni si ricordano quelle **escluse**, non quelle scelte: una coppa
 creata a metà stagione compare da sola, invece di restare nascosta finché
 qualcuno non se ne accorge. Una lega indicata esplicitamente con `--lega` si
 usa anche se è spenta.
+
+## La scrittura con l'AI
+
+Per difetto i testi della pagina li scrive il redattore classico: regole fisse,
+nessuna rete oltre a Leghe Fantacalcio, nessuna spesa. In alternativa li può
+scrivere un modello — **ChatGPT, Claude o Gemini** — con la tua chiave, a cui
+puoi dare indicazioni di tono: «usa un tono satirico», «sii spietato con chi
+perde», «scrivi come un telecronista degli anni Ottanta».
+
+**Il modello scrive le parole, non i numeri.** Titolo, sottotitolo, racconto,
+pezzo sulla classifica e trafiletti vengono da lui; risultati, classifica e
+testata vengono dai dati, come nella pagina classica. Un risultato inventato non
+ha dove finire, e anteprima, memoria e immagine funzionano allo stesso modo.
+
+### Che cosa sa il modello
+
+Gli arriva un dossier con gli stessi fatti che usa il redattore classico:
+
+- le partite, con risultato, fantapunti, marcatori, voti insufficienti e
+  formazioni incomplete;
+- la classifica completa, con i suoi criteri (punti, differenza reti,
+  fantapunti) e le osservazioni già calcolate — vetta condivisa, chi produce più
+  fantapunti senza essere primo;
+- la partita in apertura: quella che hai scelto tu (vedi
+  [La partita in apertura](#la-partita-in-apertura)), oppure, se non hai scelto,
+  quella della notizia più forte — la partita della squadra con la striscia da
+  titolo, tre sconfitte o tre vittorie di fila, altrimenti la più ricca di
+  eventi. La decide il programma prima di chiamare il modello, e **titolo e
+  racconto parlano sempre di quella partita**;
+- **le notizie della memoria**: strisce di vittorie e sconfitte, digiuni di gol,
+  prime volte della stagione e — cosa che il redattore classico non fa — le
+  serie di gol dei giocatori, ciascuna con un codice.
+
+Le regole sono quelle della pagina classica: una sola partita per esteso, un
+trafiletto per ciascuna delle altre, ognuno su un angolo diverso, un pezzo sulla
+classifica e non sulle partite, una striscia da tre in su come notizia
+principale. Le tue indicazioni cambiano tono e stile, mai i fatti. Toni forti e
+satira sì; insulti volgari, discriminazioni e attacchi a persone reali no.
+
+**La scheda Memoria resta verificabile.** Il modello dichiara quali fatti ha
+usato e dove; la scheda li mostra solo se nel pezzo si leggono davvero, cioè se
+compaiono il soggetto e una parola di quel fatto. Una squadra può avere in
+memoria sia una striscia di sconfitte sia un digiuno di gol, e il nome da solo
+non basta a dire quale dei due il pezzo racconti. Meglio un fatto usato e non
+riconosciuto che uno riconosciuto e mai scritto.
+
+### Quale modello
+
+| Fornitore | Modello | Costo per milione di token (ingresso / uscita) |
+|---|---|---|
+| ChatGPT | `gpt-5.6-luna` | 0,20 $ / 1,20 $ |
+| ChatGPT | `gpt-5.6-terra` (predefinito) | 2 $ / 12 $ |
+| ChatGPT | `gpt-6-astra` | 10 $ / 50 $ |
+| Claude | `claude-haiku-4-5` | 1 $ / 5 $ |
+| Claude | `claude-sonnet-5` | 2 $ / 10 $ |
+| Claude | `claude-opus-5` (predefinito) | 5 $ / 25 $ |
+| Gemini | `gemini-3.5-flash-lite` | **piano gratuito**, poi 0,30 $ / 2,50 $ |
+| Gemini | `gemini-3.8-flash` (predefinito) | **piano gratuito**, poi 0,75 $ / 3,75 $ |
+| Gemini | `gemini-3.1-pro-preview` | 2 $ / 12 $, niente piano gratuito |
+
+Prezzi dei listini ufficiali a settembre 2026, indicativi. Una pagina usa
+qualche migliaio di token, quindi costa da una frazione di centesimo a qualche
+decina di centesimi secondo il modello. **Gemini Flash e Flash-Lite hanno un
+piano gratuito**: a differenza delle immagini, i testi si possono provare senza
+spendere nulla, con la stessa chiave che serve per le immagini.
+
+Il modello predefinito si sceglie nelle Impostazioni; nella redazione lo si
+cambia per una generazione sola.
+
+### Le chiavi
+
+Si incollano nella schermata **Impostazioni**, sezione «Scrittura con l'AI», e
+finiscono in file esclusi da git e dallo ZIP della release: `.openai_key` per
+ChatGPT, `.anthropic_key` per Claude. Gemini usa la stessa `.gemini_key` delle
+immagini. Non tornano mai indietro alla pagina. In alternativa valgono le
+variabili d'ambiente `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` e `GEMINI_API_KEY`.
+
+**I dati della giornata vengono inviati al fornitore scelto** — nomi delle
+squadre, risultati, marcatori, classifica — e valgono le sue condizioni d'uso.
+Con il redattore classico non esce niente verso nessun modello.
+
+### Stabile, nuova versione, «Scrivila diversamente»
+
+- **Stabile**: la stessa richiesta — stessi dati, modello e indicazioni — riusa
+  l'ultima versione scritta, salvata in `.cache/scritture/`. Rigenerare non costa
+  nulla.
+- **Nuova versione**: ogni generazione chiede al modello un testo nuovo, ed è
+  una chiamata a pagamento.
+- **Scrivila diversamente** chiede una versione nuova e passa al modello il
+  titolo di quella a schermo, perché lo cambi davvero. Una chiamata sola: con il
+  redattore classico si ritenta finché il titolo cambia, con un modello no,
+  perché ogni tentativo si pagherebbe.
+
+Il seme non vale per i modelli, e in modalità AI sparisce dalla scrivania.
+
+### Come si chiama ogni fornitore
+
+- **ChatGPT**: Responses API di OpenAI, con JSON schema rigoroso
+  (`text.format`) e ragionamento basso, che costa meno e non serve a scrivere.
+- **Claude**: SDK ufficiale di Anthropic, con JSON schema (`output_config.format`)
+  e sforzo medio. Per Opus 5 è attivo il ripiego lato server
+  (`fallbacks: "default"`): se i controlli di sicurezza declinano la richiesta,
+  la ripete un altro modello invece di restituire un rifiuto.
+- **Gemini**: `generateContent` con `responseSchema`, via REST come le immagini.
+
+Rifiuti, risposte troncate, quote esaurite e chiavi sbagliate diventano messaggi
+chiari; le chiavi non compaiono mai negli errori, nemmeno quando un fornitore le
+ripete mascherate a metà.
+
+**Come è stato verificato.** Le richieste seguono la documentazione ufficiale
+dei tre fornitori, controllata a settembre 2026. Per Claude le prove fanno
+girare l'SDK vero con un trasporto finto al posto della rete, quindi verificano
+la richiesta che l'SDK costruisce davvero. **Nessuna chiamata reale è stata
+fatta** — sarebbe servita una chiave, e avrebbe speso — quindi il primo uso vero
+di ciascun fornitore è anche il suo collaudo: conviene farlo con il modello più
+economico.
 
 ## L'immagine con Gemini
 
@@ -455,6 +581,11 @@ Tutto sovrascrivibile da variabili d'ambiente (vedi `fantamagazine/config.py`):
 | `FANTA_IMPOSTAZIONI_FILE` | `.fanta_impostazioni.json` | Leghe, competizioni e testate scelte |
 | `FANTA_TESTATA` | — | Forza la testata per ogni lega |
 | `GEMINI_API_KEY` | — | Chiave di Gemini, se non si usa il file |
+| `OPENAI_API_KEY` | — | Chiave di ChatGPT, se non si usa il file |
+| `ANTHROPIC_API_KEY` | — | Chiave di Claude, se non si usa il file |
+| `OPENAI_KEY_FILE` | `.openai_key` | Dove sta la chiave di ChatGPT |
+| `ANTHROPIC_KEY_FILE` | `.anthropic_key` | Dove sta la chiave di Claude |
+| `FANTA_TIMEOUT_TESTO` | `180` | Secondi di attesa massima per la pagina scritta da un modello |
 | `GEMINI_KEY_FILE` | `.gemini_key` | Dove sta la chiave di Gemini |
 | `GEMINI_MODELLO` | — | Forza il modello, ignorando la scelta nelle impostazioni |
 | `GEMINI_TIMEOUT` | `300` | Secondi di attesa massima per un'immagine |
@@ -485,6 +616,8 @@ fantamagazine/
   impostazioni.py    leghe, competizioni e testate scelte dall'utente
   browser.py         lettura dei token dal Chrome dell'utente
   gemini.py          generazione dell'immagine con Gemini
+  modelli_testo.py   ChatGPT, Claude e Gemini: chiavi, chiamate, errori
+  scrittura_ai.py    la pagina scritta da un modello: dossier, risposta, cache
   api.py             client HTTP
   analysis.py        ricostruzione formazioni, classifica
   storico.py         cache su disco delle giornate passate
@@ -884,6 +1017,12 @@ i dati osservati non bastano a separarli.
   ferma spiegando perche', invece di produrre numeri privi di senso.
 - Una squadra che non schiera affatto ha `starts` a None: viene trattata come
   formazione vuota, non fa piu' esplodere l'analisi.
+- **I testi scritti da un modello possono sbagliare.** Risultati e classifica
+  vengono dai dati, ma nel racconto un modello può attribuire un gol alla
+  squadra sbagliata o esagerare un fatto: le regole glielo vietano, non
+  glielo impediscono. La scheda Memoria riconosce i fatti usati con un
+  controllo sul testo, che può non accorgersi di un fatto scritto con parole
+  inattese.
 - **L'eseguibile è solo per Windows a 64 bit**, e non è firmato: al primo
   avvio Windows avvisa che il programma non è riconosciuto. Una firma richiede
   un certificato a pagamento. Su Mac e Linux il progetto si usa dal codice.
@@ -909,14 +1048,18 @@ definisce sia cosa fa sia cosa non può fare:
 - **l'autore non fornisce account.** Serve un proprio account di Leghe
   Fantacalcio, ottenuto per proprio conto;
 - **il funzionamento dipende da servizi di terze parti** - le API di Leghe
-  Fantacalcio e, per le immagini, quelle di Google Gemini. Non sono governate da
-  questo progetto;
+  Fantacalcio e, se le si usa, quelle di Google (immagini e testi), OpenAI e
+  Anthropic (testi). Non sono governate da questo progetto;
 - **quei servizi possono cambiare senza preavviso.** Un endpoint che cambia
   forma, un campo che sparisce, una risposta diversa: basta questo perché una
   funzionalità smetta di funzionare. Non c'è alcuna garanzia che ciò che
   funziona oggi funzioni domani;
 - la generazione delle immagini con Gemini **è a pagamento** e la spesa è di chi
   usa la propria chiave. Nessun modello per immagini ha un piano gratuito;
+- la scrittura con un modello **invia i dati della giornata al fornitore
+  scelto**, con la chiave e a spese di chi la usa, secondo le condizioni di quel
+  fornitore. I testi di un modello possono contenere imprecisioni: risultati e
+  classifica restano quelli dei dati, ma il racconto va riletto;
 - i limiti di ciò che il programma sa raccontare sono elencati in
   [Limiti noti](#limiti-noti); il codice è fornito «così com'è», secondo la
   licenza [MIT](LICENSE).
@@ -954,7 +1097,8 @@ Termini, un'autorizzazione del titolare del servizio, tale utilizzo deve essere
 effettuato soltanto dopo aver ottenuto quell'autorizzazione.
 
 **Servizi di terze parti.** Il programma interagisce con servizi non governati
-dall'autore - le API di Leghe Fantacalcio e quelle di Google Gemini - e viene
+dall'autore - le API di Leghe Fantacalcio e, se l'utilizzatore le attiva con le
+proprie chiavi, quelle di Google, OpenAI e Anthropic - e viene
 fornito senza garanzie circa la loro disponibilità, il loro comportamento
 futuro o la persistenza delle funzionalità che su di essi si appoggiano.
 

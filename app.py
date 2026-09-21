@@ -166,6 +166,22 @@ def crea_app() -> Flask:
         if apertura is not None and len(apertura) > 200:
             return _errore("Nome di squadra troppo lungo.", "parametri", 400)
 
+        # Chi scrive: il redattore classico, o un modello con le indicazioni di
+        # chi usa l'app. Testi lunghi o di tipo sbagliato non arrivano al servizio.
+        scrittura = dati.get("scrittura") or "classica"
+        if scrittura not in ("classica", "ai"):
+            return _errore("La scrittura può essere «classica» o «ai».", "parametri", 400)
+        testi = {}
+        for campo, massimo in (("fornitore", 30), ("modello_testo", 80), ("indicazioni", 600),
+                               ("precedente", 300)):
+            valore = dati.get(campo)
+            if valore is not None and not isinstance(valore, str):
+                return _errore(f"«{campo}» deve essere testo.", "parametri", 400)
+            if valore is not None and len(valore) > massimo:
+                return _errore(f"«{campo}» è troppo lungo: al massimo {massimo} caratteri.",
+                               "parametri", 400)
+            testi[campo] = (valore or "").strip()
+
         risultato = servizio.genera(
             lega,
             competizione,
@@ -174,6 +190,11 @@ def crea_app() -> Flask:
             varia=bool(dati.get("varia")),
             usa_cache=dati.get("usa_cache", True) is not False,
             apertura=(apertura or "").strip() or None,
+            scrittura=scrittura,
+            fornitore=testi["fornitore"] or None,
+            modello_testo=testi["modello_testo"] or None,
+            indicazioni=testi["indicazioni"],
+            precedente=testi["precedente"],
         )
         return jsonify(
             {
@@ -215,6 +236,40 @@ def crea_app() -> Flask:
     def rimuovi_chiave_gemini():
         servizio.rimuovi_chiave_gemini()
         return jsonify(servizio.stato_gemini())
+
+    # --- La scrittura con l'AI -----------------------------------------------
+    @app.get("/api/testo")
+    def stato_testo():
+        # Dice quali chiavi ci sono, mai quali siano.
+        return jsonify(servizio.stato_testo())
+
+    @app.post("/api/testo")
+    def salva_testo():
+        dati = _oggetto(request.get_json(silent=True))
+        chiavi = dati.get("chiavi") or {}
+        if not isinstance(chiavi, dict):
+            return _errore("Le chiavi vanno indicate per fornitore.", "parametri", 400)
+        for fornitore, chiave in chiavi.items():
+            # Una chiave vuota vuol dire "non toccarla": per cancellarla c'è la sua rotta.
+            if isinstance(chiave, str) and chiave.strip():
+                servizio.salva_chiave_testo(str(fornitore), chiave)
+            elif chiave not in (None, ""):
+                return _errore("Ogni chiave deve essere testo.", "parametri", 400)
+
+        fornitore, modello = dati.get("fornitore"), dati.get("modello")
+        if fornitore is not None or modello is not None:
+            if not isinstance(fornitore, str) or not isinstance(modello, str):
+                return _errore("Fornitore e modello devono essere testo.", "parametri", 400)
+            servizio.salva_impostazioni_testo(fornitore, modello)
+        return jsonify(servizio.stato_testo())
+
+    @app.post("/api/testo/rimuovi-chiave")
+    def rimuovi_chiave_testo():
+        fornitore = _oggetto(request.get_json(silent=True)).get("fornitore")
+        if not isinstance(fornitore, str):
+            return _errore("Indica di quale fornitore cancellare la chiave.", "parametri", 400)
+        servizio.rimuovi_chiave_testo(fornitore)
+        return jsonify(servizio.stato_testo())
 
     @app.post("/api/immagine")
     def immagine():

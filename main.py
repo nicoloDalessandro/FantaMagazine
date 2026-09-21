@@ -12,6 +12,8 @@ diagnostica passano da stderr.
     python main.py --verbose                # diagnostica su stderr
     python main.py --giornata 3             # forza una giornata specifica
     python main.py --apertura "Bar Sport"   # quella partita in prima pagina
+    python main.py --ai claude              # la pagina la scrive un modello
+    python main.py --ai --istruzioni "tono satirico"
     python main.py --varia                  # riformula a ogni esecuzione
     python main.py --memoria                # mostra cosa ricorda e cosa usa in pagina
     python main.py --immagine               # genera anche l'immagine con Gemini
@@ -51,6 +53,8 @@ SUGGERIMENTI = {
     "gemini_quota": "Attiva la fatturazione sul progetto della chiave:  https://aistudio.google.com/apikey",
     "gemini_chiave_mancante": "Salva la chiave nel file .gemini_key o nella variabile GEMINI_API_KEY",
     "gemini_chiave_non_valida": "Crea una nuova chiave su https://aistudio.google.com/apikey",
+    "testo_chiave_mancante": "Salvala dalle Impostazioni della redazione (python app.py), o nella variabile d'ambiente indicata",
+    "testo_chiave_non_valida": "Creane una nuova sul sito del fornitore e salvala dalle Impostazioni della redazione",
 }
 
 
@@ -330,6 +334,10 @@ def _esegui(argomenti: argparse.Namespace) -> int:
         usa_cache=not argomenti.no_cache,
         su_log=log,
         apertura=argomenti.apertura,
+        scrittura="ai" if argomenti.ai is not None else "classica",
+        fornitore=argomenti.ai or None,
+        modello_testo=argomenti.modello_testo,
+        indicazioni=argomenti.istruzioni or "",
     )
     # Gli avvisi di validazione si mostrano sempre, anche senza --verbose.
     if not loud:
@@ -391,6 +399,24 @@ def main() -> int:
         "--apertura",
         metavar="SQUADRA",
         help="Mette in prima pagina la partita di questa squadra, in casa o fuori",
+    )
+    parser.add_argument(
+        "--ai",
+        nargs="?",
+        const="",
+        metavar="FORNITORE",
+        help="Fa scrivere i testi a un modello: chatgpt, claude o gemini "
+        "(senza nome, quello scelto nelle impostazioni). Con --varia, una versione nuova",
+    )
+    parser.add_argument(
+        "--modello-testo",
+        metavar="MODELLO",
+        help="Il modello che scrive, fra quelli del fornitore (per esempio claude-sonnet-5)",
+    )
+    parser.add_argument(
+        "--istruzioni",
+        metavar="TESTO",
+        help="Indicazioni di tono e stile per il modello, per esempio «usa un tono satirico»",
     )
     parser.add_argument("--verbose", action="store_true", help="Diagnostica su stderr")
     parser.add_argument(

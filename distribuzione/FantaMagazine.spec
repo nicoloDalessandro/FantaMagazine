@@ -32,6 +32,8 @@ analisi = Analysis(  # noqa: F821
     # evita di dipendere da quanto a fondo guarda l'analisi automatica.
     hiddenimports=[
         "app",
+        # Importato dentro una funzione, solo quando scrive Claude.
+        "anthropic",
         "fantamagazine.accesso",
         "fantamagazine.analysis",
         "fantamagazine.api",
@@ -41,8 +43,10 @@ analisi = Analysis(  # noqa: F821
         "fantamagazine.gemini",
         "fantamagazine.impostazioni",
         "fantamagazine.listone",
+        "fantamagazine.modelli_testo",
         "fantamagazine.prompt",
         "fantamagazine.resoconto",
+        "fantamagazine.scrittura_ai",
         "fantamagazine.servizio",
         "fantamagazine.storico",
         "fantamagazine.tendenze",

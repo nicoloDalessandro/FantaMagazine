@@ -1,2 +1,4 @@
 requests>=2.31
 flask>=3.0
+# Solo per la scrittura con Claude: Anthropic chiede di usare il suo SDK ufficiale.
+anthropic>=1.7

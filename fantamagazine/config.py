@@ -79,9 +79,16 @@ UTENTE_FILE = Path(os.getenv("FANTA_UTENTE_FILE", ROOT / ".fanta_utente.json"))
 # Leghe e competizioni scelte, e il nome del giornale di ciascuna lega.
 IMPOSTAZIONI_FILE = Path(os.getenv("FANTA_IMPOSTAZIONI_FILE", ROOT / ".fanta_impostazioni.json"))
 
-# Chiave dell'API di Gemini, per generare l'immagine della prima pagina.
-# Anche questa resta fuori da git; in alternativa, variabile GEMINI_API_KEY.
+# Chiave dell'API di Gemini, per generare l'immagine della prima pagina e,
+# volendo, per farne scrivere il testo. Anche questa resta fuori da git; in
+# alternativa, variabile GEMINI_API_KEY.
 GEMINI_KEY_FILE = Path(os.getenv("GEMINI_KEY_FILE", ROOT / ".gemini_key"))
+
+# Le chiavi degli altri modelli che possono scrivere la pagina al posto del
+# redattore classico. Stesse regole: fuori da git, mai restituite al browser;
+# in alternativa, le variabili OPENAI_API_KEY e ANTHROPIC_API_KEY.
+OPENAI_KEY_FILE = Path(os.getenv("OPENAI_KEY_FILE", ROOT / ".openai_key"))
+ANTHROPIC_KEY_FILE = Path(os.getenv("ANTHROPIC_KEY_FILE", ROOT / ".anthropic_key"))
 
 # Dove finiscono le immagini: le bozze appena generate, che nessuno ha ancora
 # deciso di tenere, e le prime pagine salvate.

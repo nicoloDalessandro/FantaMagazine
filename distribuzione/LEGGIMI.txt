@@ -26,13 +26,17 @@ Dove finiscono i tuoi dati
 
 Tutto resta in questa cartella, accanto all'eseguibile: niente server, niente
 account da creare, nessun dato che esce da questo computer se non verso Leghe
-Fantacalcio e - se la usi - verso Gemini.
+Fantacalcio e - solo se li usi, con le tue chiavi - verso Gemini, ChatGPT o
+Claude.
 
   .fanta_leghe.json          il token di ogni tua lega
   .fanta_utente.json         il tuo id utente e il suo token
   .fanta_impostazioni.json   leghe, competizioni e nome del giornale
   .gemini_key                la chiave di Gemini, se la inserisci
-  .cache\                    storico delle giornate e bozze delle immagini
+  .openai_key                la chiave di ChatGPT, se la inserisci
+  .anthropic_key             la chiave di Claude, se la inserisci
+  .cache\                    storico delle giornate, bozze delle immagini e
+                             pagine scritte dai modelli
   prime_pagine\              le immagini che scegli di salvare
 
 La tua password non viene mai salvata: serve solo alla chiamata di accesso.

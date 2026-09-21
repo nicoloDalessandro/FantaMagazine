@@ -19,6 +19,22 @@
     apertura: $("apertura"),
     notaApertura: $("nota-apertura"),
     seme: $("seme"),
+    dettagliSeme: $("dettagli-seme"),
+    notaAutore: $("nota-autore"),
+    pannelloAi: $("pannello-ai"),
+    modelloTesto: $("modello-testo"),
+    notaModelloTesto: $("nota-modello-testo"),
+    apriImpostazioniAi: $("apri-impostazioni-ai"),
+    indicazioni: $("indicazioni"),
+    chiaveChatgpt: $("chiave-chatgpt"),
+    chiaveClaude: $("chiave-claude"),
+    statoChiaveChatgpt: $("stato-chiave-chatgpt"),
+    statoChiaveClaude: $("stato-chiave-claude"),
+    rimuoviChiaveChatgpt: $("rimuovi-chiave-chatgpt"),
+    rimuoviChiaveClaude: $("rimuovi-chiave-claude"),
+    statoChiaveGeminiTesto: $("stato-chiave-gemini-testo"),
+    modelloTestoPredefinito: $("modello-testo-predefinito"),
+    notaModelloTestoPredefinito: $("nota-modello-testo-predefinito"),
     notaScrittura: $("nota-scrittura"),
     genera: $("genera"),
     svuotaCache: $("svuota-cache"),
@@ -103,6 +119,7 @@
     scheda: "anteprima",
     gemini: null,
     immagine: null,
+    testo: null,
   };
 
   // --- Utilità ---------------------------------------------------------------
@@ -125,6 +142,12 @@
 
   /** 0.134 -> "0,13". */
   const valuta = (valore) => Number(valore).toFixed(2).replace(".", ",");
+
+  // Problemi di chiave della scrittura con l'AI: si risolvono dalle Impostazioni.
+  const erroreDiScrittura = (codice) =>
+    ["testo_chiave_mancante", "testo_chiave_non_valida", "testo_permesso", "testo_quota"].includes(
+      codice,
+    );
 
   const erroreDiGemini = (codice) =>
     ["gemini_quota", "gemini_chiave_mancante", "gemini_chiave_non_valida", "gemini_permesso"].includes(
@@ -225,6 +248,12 @@
     nodi.copia.disabled = stato.occupato;
     nodi.svuotaCache.disabled = stato.occupato;
     nodi.aggiornaListone.disabled = stato.occupato || !legaCorrente();
+    nodi.modelloTesto.disabled = stato.occupato || !stato.testo;
+    nodi.indicazioni.disabled = stato.occupato;
+    for (const pulsante of [nodi.rimuoviChiaveChatgpt, nodi.rimuoviChiaveClaude,
+                            nodi.apriImpostazioniAi]) {
+      pulsante.disabled = stato.occupato;
+    }
     // Solo "automatica" vuol dire che le partite non si conoscono ancora.
     nodi.apertura.disabled = stato.occupato || nodi.apertura.options.length < 2;
     for (const pulsante of [nodi.entra, nodi.accessoChrome, nodi.apriLeghe, nodi.esci,
@@ -420,11 +449,140 @@
   const scritturaScelta = () =>
     document.querySelector('input[name="scrittura"]:checked')?.value || "stabile";
 
+  const autoreScelto = () =>
+    document.querySelector('input[name="autore"]:checked')?.value || "classica";
+
   function aggiornaNotaScrittura() {
-    nodi.notaScrittura.textContent =
-      scritturaScelta() === "varia"
-        ? "Ogni generazione racconta le stesse notizie con parole diverse."
+    const ai = autoreScelto() === "ai";
+    if (scritturaScelta() === "varia") {
+      nodi.notaScrittura.textContent = ai
+        ? "Ogni generazione chiede al modello una versione nuova: è una chiamata, e costa."
+        : "Ogni generazione racconta le stesse notizie con parole diverse.";
+    } else {
+      nodi.notaScrittura.textContent = ai
+        ? "Stessi dati e stesse indicazioni riusano l'ultima versione scritta, senza nuove spese."
         : "Rigenerare la stessa giornata dà lo stesso testo.";
+    }
+  }
+
+  // --- Scrittura con l'AI ------------------------------------------------------
+  function fornitoreTesto(id) {
+    return (stato.testo?.fornitori || []).find((f) => f.id === id) || null;
+  }
+
+  /** "claude|claude-opus-5" -> fornitore e modello, o null se non esistono. */
+  function sceltaTesto(valore) {
+    const [idFornitore, idModello] = String(valore || "").split("|");
+    const fornitore = fornitoreTesto(idFornitore);
+    const modello = fornitore?.modelli.find((m) => m.id === idModello);
+    return fornitore && modello ? { fornitore, modello } : null;
+  }
+
+  function riempiModelliTesto(tendina, valore) {
+    const fornitori = stato.testo?.fornitori || [];
+    tendina.replaceChildren(
+      ...fornitori.map((f) =>
+        el(
+          "optgroup",
+          { attributi: { label: f.nome } },
+          ...f.modelli.map((m) =>
+            el(
+              "option",
+              { attributi: { value: `${f.id}|${m.id}` } },
+              m.nome + (m.gratuito ? " · gratuito" : "") +
+                (f.chiave_presente ? "" : " · manca la chiave"),
+            ),
+          ),
+        ),
+      ),
+    );
+    const predefinito = stato.testo ? `${stato.testo.fornitore}|${stato.testo.modello}` : "";
+    tendina.value = sceltaTesto(valore) ? valore : predefinito;
+  }
+
+  function aggiornaAutore() {
+    const ai = autoreScelto() === "ai";
+    nodi.pannelloAi.hidden = !ai;
+    // Il seme decide le formule del redattore: per un modello non vuol dire nulla.
+    nodi.dettagliSeme.hidden = ai;
+    nodi.notaAutore.textContent = ai
+      ? "I testi li scrive il modello, sugli stessi fatti: risultati e classifica restano quelli veri."
+      : "Il redattore scrive con regole fisse: gratis, e senza chiamare nessun modello.";
+    aggiornaNotaScrittura();
+
+    const scelta = sceltaTesto(nodi.modelloTesto.value);
+    if (!stato.testo) {
+      nodi.notaModelloTesto.textContent = "Elenco dei modelli non disponibile.";
+      nodi.apriImpostazioniAi.hidden = true;
+      return;
+    }
+    if (!scelta) return;
+    const { fornitore, modello } = scelta;
+    nodi.notaModelloTesto.textContent =
+      `${modello.nota} I dati della giornata vengono inviati ai server di ${fornitore.azienda}.` +
+      (fornitore.chiave_presente ? "" : ` Manca la chiave di ${fornitore.nome}.`);
+    nodi.apriImpostazioniAi.hidden = fornitore.chiave_presente;
+  }
+
+  async function caricaTesto() {
+    try {
+      stato.testo = await chiama("/api/testo");
+    } catch {
+      stato.testo = null;
+    }
+    riempiModelliTesto(nodi.modelloTesto, preferenze.leggi("modelloTesto"));
+    disegnaImpostazioniTesto();
+    aggiornaAutore();
+    aggiornaControlli();
+  }
+
+  function testoStatoChiave(fornitore, variabile) {
+    if (!fornitore) return "";
+    if (fornitore.chiave_da_ambiente) {
+      return `La chiave arriva dalla variabile ${variabile}, che ha la precedenza su quella salvata qui.`;
+    }
+    return fornitore.chiave_presente
+      ? "Chiave salvata: scrivendone una nuova, prende il suo posto."
+      : "Nessuna chiave.";
+  }
+
+  function disegnaImpostazioniTesto() {
+    const chatgpt = fornitoreTesto("chatgpt");
+    const claude = fornitoreTesto("claude");
+    const gemini = fornitoreTesto("gemini");
+    nodi.statoChiaveChatgpt.textContent = testoStatoChiave(chatgpt, "OPENAI_API_KEY");
+    nodi.statoChiaveClaude.textContent = testoStatoChiave(claude, "ANTHROPIC_API_KEY");
+    nodi.rimuoviChiaveChatgpt.hidden = !chatgpt?.chiave_presente || chatgpt.chiave_da_ambiente;
+    nodi.rimuoviChiaveClaude.hidden = !claude?.chiave_presente || claude.chiave_da_ambiente;
+    nodi.statoChiaveGeminiTesto.textContent = gemini
+      ? `Gemini usa la stessa chiave delle immagini, qui sopra: ${
+          gemini.chiave_presente ? "c'è già." : "non è ancora stata inserita."
+        }`
+      : "";
+    riempiModelliTesto(nodi.modelloTestoPredefinito, "");
+    const scelta = sceltaTesto(nodi.modelloTestoPredefinito.value);
+    nodi.notaModelloTestoPredefinito.textContent = scelta ? scelta.modello.nota : "";
+  }
+
+  async function rimuoviChiaveTesto(idFornitore) {
+    const fornitore = fornitoreTesto(idFornitore);
+    if (stato.occupato || !fornitore) return;
+    if (!window.confirm(`Rimuovere la chiave di ${fornitore.nome} da questo computer?`)) return;
+    impostaOccupato(true);
+    try {
+      stato.testo = await chiama("/api/testo/rimuovi-chiave", {
+        metodo: "POST",
+        corpo: { fornitore: idFornitore },
+      });
+      riempiModelliTesto(nodi.modelloTesto, nodi.modelloTesto.value);
+      disegnaImpostazioniTesto();
+      aggiornaAutore();
+      mostraAvviso("Chiave rimossa da questo computer.", "ok");
+    } catch (errore) {
+      mostraAvviso(errore.message, "errore");
+    } finally {
+      impostaOccupato(false);
+    }
   }
 
   // --- Partita in apertura ---------------------------------------------------
@@ -478,6 +636,15 @@
       pulsante.addEventListener("click", () => mostraSchermata("accesso"));
       nodi.esito.append(pulsante);
     }
+    if (erroreDiScrittura(errore.codice)) {
+      const pulsante = el(
+        "button",
+        { classe: "pulsante pulsante--leggero", attributi: { type: "button" } },
+        "Apri le impostazioni",
+      );
+      pulsante.addEventListener("click", apriImpostazioniApp);
+      nodi.esito.append(pulsante);
+    }
     if (erroreDiGemini(errore.codice)) {
       nodi.esito.append(
         el(
@@ -509,8 +676,24 @@
     };
     if (nodi.apertura.value) corpo.apertura = nodi.apertura.value;
 
+    const ai = autoreScelto() === "ai";
+    const scelta = ai ? sceltaTesto(nodi.modelloTesto.value) : null;
+    if (ai) {
+      if (!scelta) {
+        mostraErrore(new ErroreApi("Scegli il modello che deve scrivere.", "parametri", 400));
+        return;
+      }
+      corpo.scrittura = "ai";
+      corpo.fornitore = scelta.fornitore.id;
+      corpo.modello_testo = scelta.modello.id;
+      const indicazioni = nodi.indicazioni.value.trim();
+      if (indicazioni) corpo.indicazioni = indicazioni;
+      // "Scrivila diversamente": il modello riceve il titolo a schermo, per cambiarlo.
+      if (nuovaVersione && stato.risultato) corpo.precedente = stato.risultato.pagina.titolo;
+    }
+
     const semeScritto = nodi.seme.value.trim();
-    if (semeScritto !== "" && !nuovaVersione) {
+    if (semeScritto !== "" && !nuovaVersione && !ai) {
       const seme = Number(semeScritto);
       if (!Number.isInteger(seme) || seme < 0) {
         mostraErrore(new ErroreApi("Il seme deve essere un numero intero positivo.", "parametri", 400));
@@ -524,17 +707,22 @@
     nascondiAvviso();
     impostaOccupato(true);
     mostraStato("caricamento");
-    nodi.caricamentoTesto.textContent = "Il redattore sta scrivendo…";
+    nodi.caricamentoTesto.textContent = ai
+      ? `${scelta.modello.nome} sta scrivendo la pagina…`
+      : "Il redattore sta scrivendo…";
     const lento = setTimeout(() => {
-      nodi.caricamentoTesto.textContent =
-        "Prima volta su questa giornata: sto scaricando le formazioni, serve qualche secondo.";
+      nodi.caricamentoTesto.textContent = ai
+        ? "Un modello può metterci fino a un minuto: la pagina arriva appena è pronta."
+        : "Prima volta su questa giornata: sto scaricando le formazioni, serve qualche secondo.";
     }, 3500);
 
     // "Scrivila diversamente" deve mostrare davvero un'altra versione. Un seme
     // casuale può ricadere su un testo già visto, e anche quando il testo
     // cambia il titolo può restare lo stesso (le sue formule sono poche): il
     // titolo è la prima cosa che si guarda, quindi si riprova anche in quel caso.
-    const precedente = nuovaVersione && stato.risultato ? stato.risultato : null;
+    // Con un modello non si riprova: ogni tentativo è una chiamata a pagamento, e
+    // il titolo precedente è già nella richiesta.
+    const precedente = nuovaVersione && stato.risultato && !ai ? stato.risultato : null;
     const troppoSimile = (dati) =>
       precedente !== null &&
       (dati.prompt === precedente.prompt || dati.pagina.titolo === precedente.pagina.titolo);
@@ -551,7 +739,10 @@
       disegnaMemoria(dati.memoria, dati.pagina.richiami || []);
       nodi.prompt.textContent = dati.prompt;
       nodi.dettagliEsito.textContent =
-        `${dati.nome_lega} · ${dati.nome_competizione} · giornata ${dati.pagina.giornata} · seme ${dati.pagina.seme}` +
+        `${dati.nome_lega} · ${dati.nome_competizione} · giornata ${dati.pagina.giornata} · ` +
+        (dati.pagina.scrittura === "ai"
+          ? `scritta da ${dati.pagina.autore}`
+          : `seme ${dati.pagina.seme}`) +
         (dati.pagina.apertura_scelta ? " · apertura scelta" : "");
 
       if (dati.avvisi.length) {
@@ -1099,6 +1290,17 @@
     const chiave = nodi.chiaveGemini.value.trim();
     if (chiave) corpo.chiave = chiave;
 
+    const corpoTesto = { chiavi: {} };
+    const chiaveChatgpt = nodi.chiaveChatgpt.value.trim();
+    const chiaveClaude = nodi.chiaveClaude.value.trim();
+    if (chiaveChatgpt) corpoTesto.chiavi.chatgpt = chiaveChatgpt;
+    if (chiaveClaude) corpoTesto.chiavi.claude = chiaveClaude;
+    const predefinito = sceltaTesto(nodi.modelloTestoPredefinito.value);
+    if (predefinito) {
+      corpoTesto.fornitore = predefinito.fornitore.id;
+      corpoTesto.modello = predefinito.modello.id;
+    }
+
     impostaOccupato(true);
     let riuscito = false;
     try {
@@ -1108,6 +1310,13 @@
       riempiRisoluzioni(nodi.risoluzione, stato.gemini.modello, stato.gemini.dimensione);
       aggiornaCosto();
       disegnaImpostazioniApp();
+      // Dopo Gemini: la sua chiave vale anche per la scrittura, e lo stato va riletto.
+      stato.testo = await chiama("/api/testo", { metodo: "POST", corpo: corpoTesto });
+      nodi.chiaveChatgpt.value = "";
+      nodi.chiaveClaude.value = "";
+      riempiModelliTesto(nodi.modelloTesto, nodi.modelloTesto.value);
+      disegnaImpostazioniTesto();
+      aggiornaAutore();
       mostraAvviso("Impostazioni salvate.", "ok");
       riuscito = true;
     } catch (errore) {
@@ -1629,6 +1838,26 @@
     for (const scelta of document.querySelectorAll('input[name="scrittura"]')) {
       scelta.addEventListener("change", aggiornaNotaScrittura);
     }
+    for (const scelta of document.querySelectorAll('input[name="autore"]')) {
+      scelta.addEventListener("change", () => {
+        preferenze.scrivi("autore", autoreScelto());
+        aggiornaAutore();
+      });
+    }
+    nodi.modelloTesto.addEventListener("change", () => {
+      preferenze.scrivi("modelloTesto", nodi.modelloTesto.value);
+      aggiornaAutore();
+    });
+    nodi.modelloTestoPredefinito.addEventListener("change", () => {
+      const scelta = sceltaTesto(nodi.modelloTestoPredefinito.value);
+      nodi.notaModelloTestoPredefinito.textContent = scelta ? scelta.modello.nota : "";
+    });
+    nodi.indicazioni.addEventListener("input", () => {
+      preferenze.scrivi("indicazioni", nodi.indicazioni.value);
+    });
+    nodi.apriImpostazioniAi.addEventListener("click", apriImpostazioniApp);
+    nodi.rimuoviChiaveChatgpt.addEventListener("click", () => rimuoviChiaveTesto("chatgpt"));
+    nodi.rimuoviChiaveClaude.addEventListener("click", () => rimuoviChiaveTesto("claude"));
     nodi.genera.addEventListener("click", () => genera());
     nodi.altraVersione.addEventListener("click", () => genera({ nuovaVersione: true }));
     nodi.copia.addEventListener("click", copia);
@@ -1681,8 +1910,14 @@
     stato.scheda = ["prompt", "memoria"].includes(schedaSalvata) ? schedaSalvata : "anteprima";
     mostraScheda(stato.scheda);
     mostraStato("vuoto");
-    aggiornaNotaScrittura();
+    // Chi scrive e le indicazioni si ricordano fra una visita e l'altra.
+    if (preferenze.leggi("autore") === "ai") {
+      document.querySelector('input[name="autore"][value="ai"]').checked = true;
+    }
+    nodi.indicazioni.value = preferenze.leggi("indicazioni") || "";
+    aggiornaAutore();
     caricaGemini();
+    caricaTesto();
     avviaAccount();
   }
 

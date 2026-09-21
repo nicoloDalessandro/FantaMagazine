@@ -223,6 +223,8 @@ def test_lo_zip_con_dati_personali_non_passa() -> None:
     """Il cancello che conta: non si fida della ricetta, guarda il risultato."""
     intrusi = (
         ".gemini_key",
+        ".openai_key",
+        ".anthropic_key",
         "credentials",
         ".env",
         ".fanta_leghe.json",
@@ -297,7 +299,8 @@ def test_i_workflow_non_chiedono_segreti() -> None:
 def test_i_file_personali_restano_fuori_da_git() -> None:
     """Le regole di .gitignore, verificate una per una invece che a memoria."""
     personali = (
-        "credentials", ".gemini_key", ".env", ".fanta_leghe.json", ".fanta_utente.json",
+        "credentials", ".gemini_key", ".openai_key", ".anthropic_key", ".env",
+        ".fanta_leghe.json", ".fanta_utente.json",
         ".fanta_impostazioni.json", ".fanta_token", ".cache/giornate/1.json",
         "prime_pagine/x.png", "dist/FantaMagazine/FantaMagazine.exe", "build/x",
         "FantaMagazine-Windows-v1.0.0.zip", ".idea/workspace.xml", ".claude/launch.json",

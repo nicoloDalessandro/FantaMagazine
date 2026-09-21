@@ -1625,6 +1625,33 @@ class PrimaPagina:
     # pagina). Nemmeno questi finiscono nel prompt.
     partite: list[VocePartita] = field(default_factory=list)
     apertura_scelta: str = ""
+    # Chi ha scritto i testi: il redattore classico, o un modello ("ai") di cui
+    # `autore` dice il nome. Risultati e classifica vengono sempre dai dati.
+    scrittura: str = "classica"
+    autore: str = ""
+
+
+def righe_risultati(partite: list[Partita]) -> list[str]:
+    """I risultati come si leggono nel riquadro: "Casa 2-1 Trasferta"."""
+    return [f"{p.casa.squadra} {p.risultato} {p.trasferta.squadra}" for p in partite]
+
+
+def voci_classifica(tabella: list[RigaClassifica]) -> list[VoceClassifica]:
+    return [
+        VoceClassifica(posizione=indice, squadra=r.squadra, punti=r.punti, fantapunti=r.fantapunti)
+        for indice, r in enumerate(tabella, 1)
+    ]
+
+
+def voci_partite(partite: list[Partita]) -> list[VocePartita]:
+    return [
+        VocePartita(casa=p.casa.squadra, trasferta=p.trasferta.squadra, risultato=p.risultato)
+        for p in partite
+    ]
+
+
+def etichetta_apertura(gara: Partita | None) -> str:
+    return f"{gara.casa.squadra} {gara.risultato} {gara.trasferta.squadra}" if gara else ""
 
 
 _NUMERI = {
@@ -1702,27 +1729,14 @@ def componi(
         seme=seme,
         titolo=principale,
         sottotitolo=sottotitolo,
-        apertura=(
-            f"{gara_apertura.casa.squadra} {gara_apertura.risultato} "
-            f"{gara_apertura.trasferta.squadra}"
-            if gara_apertura
-            else ""
-        ),
+        apertura=etichetta_apertura(gara_apertura),
         racconto=paragrafi,
-        risultati=[f"{p.casa.squadra} {p.risultato} {p.trasferta.squadra}" for p in partite],
-        classifica=[
-            VoceClassifica(
-                posizione=indice, squadra=r.squadra, punti=r.punti, fantapunti=r.fantapunti
-            )
-            for indice, r in enumerate(tabella, 1)
-        ],
+        risultati=righe_risultati(partite),
+        classifica=voci_classifica(tabella),
         pezzo_lungo=pezzo_lungo,
         trafiletti=brevi,
         richiami=richiami,
-        partite=[
-            VocePartita(casa=p.casa.squadra, trasferta=p.trasferta.squadra, risultato=p.risultato)
-            for p in partite
-        ],
+        partite=voci_partite(partite),
         apertura_scelta=apertura.casa.squadra if apertura is not None else "",
     )
 
