@@ -6,4 +6,4 @@ release rifiuta di pubblicare se `v{__version__}` e il tag non coincidono, cosi'
 l'app non puo' dichiarare un numero diverso da quello dello ZIP scaricato.
 """
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
