@@ -66,6 +66,10 @@ l'accesso da questo computer.
   titolo diverso da quello a schermo.
 - **Seme preciso**: il seme usato compare sotto l'anteprima; riscriverlo
   riproduce esattamente quella versione.
+- **Partita in apertura**: dopo aver generato la pagina, il menu propone le
+  partite di quella giornata. Sceglierne una la mette in prima pagina — nel
+  titolo e nel racconto — e la pagina si rigenera da sola; «Automatica» torna
+  alla scelta della pagina (vedi [La partita in apertura](#la-partita-in-apertura)).
 - **Memoria**: la scheda mostra che cosa ricorda la memoria delle giornate
   passate e quali punti della pagina ne sono nati, con il testo esatto e il dato
   che li ha fatti scattare (vedi [Vedere la memoria al lavoro](#vedere-la-memoria-al-lavoro)).
@@ -90,6 +94,7 @@ python main.py --lega mia-lega  # salta le domande
 python main.py > prompt.txt     # il menu resta a schermo, il prompt sul file
 python main.py --verbose        # diagnostica su stderr
 python main.py --giornata 3     # forza una giornata specifica
+python main.py --apertura "Bar Sport"  # la partita di questa squadra in prima pagina
 python main.py --varia          # riformula il pezzo a ogni esecuzione
 python main.py --seme 42        # riformula in modo riproducibile
 python main.py --memoria        # su stderr: cosa ricorda la memoria e cosa usa la pagina
@@ -536,7 +541,39 @@ uno e tre. Le etichette nel prompt seguono i dati e non un valore cablato.
 
 La gara di apertura la sceglie `prompt._interesse()`: pesa le anomalie (una
 squadra incompleta vale più di tutto), poi gol e insufficienze, e a parità
-premia le gare equilibrate, che si raccontano meglio di quelle scontate.
+premia le gare equilibrate, che si raccontano meglio di quelle scontate. Si può
+anche sceglierla a mano, come spiegato qui sotto.
+
+### La partita in apertura
+
+Per difetto titolo e racconto nascono da due scelte indipendenti: il racconto
+va alla partita più ricca di eventi, il titolo al fatto più rilevante della
+giornata — una striscia lunga, tutte le vittorie in trasferta, il miglior
+punteggio. Possono quindi parlare di cose diverse, come in un giornale vero.
+
+Quando la partita la sceglie chi usa l'app, **titolo e racconto parlano di
+quella**, e le altre finiscono nei trafiletti come sempre:
+
+- se una delle due squadre ha una striscia da prima pagina (tre sconfitte o
+  tre vittorie di fila), il titolo la racconta: questa partita ne è l'ultimo
+  anello. Stesse soglie e stessa precedenza del titolo automatico, prima la
+  crisi e poi la serie positiva, e la scheda Memoria lo segna come sempre;
+- una striscia di chi **non** gioca quella partita resta fuori dal titolo: la
+  scelta viene prima. La memoria la conserva, e la scheda la mostra fra ciò che
+  la pagina non ha raccontato;
+- altrimenti il titolo nasce dalla partita: pareggio, vittoria larga, sul filo,
+  in casa o in trasferta, con le stesse soglie del racconto ma con verbi
+  diversi, perché titolo e attacco del pezzo non ripetano la stessa parola.
+
+Ogni caso ha più formule, così «Scrivila diversamente» può cambiare anche il
+titolo. Senza scelta, la pagina resta quella decisa in automatico.
+
+Dalla redazione il menu si riempie dopo la prima generazione, perché le partite
+di una giornata si conoscono solo allora, e si svuota appena cambiano lega,
+competizione o giornata: non può proporre una partita di un'altra giornata. Da
+riga di comando basta una delle due squadre, in casa o fuori, senza badare alle
+maiuscole; una squadra che quel giorno non ha giocato viene rifiutata con
+l'elenco delle partite vere.
 
 Il trafiletto lungo guarda la **classifica**, non le partite: con tutte e cinque
 già raccontate altrove, una rassegna delle gare qui ripeterebbe soltanto. Lo

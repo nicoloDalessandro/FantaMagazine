@@ -22,7 +22,7 @@ except (AttributeError, ValueError):
 
 from fantamagazine import prompt, tendenze
 from fantamagazine.analysis import Formazione, Giocatore, Partita, RigaClassifica
-from test_tendenze import _storico_finto
+from test_tendenze import _formazione, _storico_finto
 
 SQUADRE = ["Sfigati FC", "Bomber United", "Muro Difensivo", "Media Mediocre"]
 
@@ -713,6 +713,173 @@ def test_vetta_condivisa_non_contraddice_la_classifica() -> None:
         testo = [f"{t} {x}".upper() for chiave, t, x in sola if chiave == "vetta"][0]
         assert not any(f in testo for f in condivisa), f"seme {seme}: condivisa senza motivo: {testo}"
     print("  ok  vetta condivisa raccontata come tale, su 40 semi")
+
+
+# --- La partita in apertura scelta da chi usa l'app ---------------------------------
+def _tabella_semplice(nomi: list[str]) -> list[RigaClassifica]:
+    return [
+        RigaClassifica(squadra=nome, punti=3 * (len(nomi) - i), giocate=3, fantapunti=200.0 - i)
+        for i, nome in enumerate(nomi)
+    ]
+
+
+def _pagina_con(partite: list[Partita], memoria=None, seme: int = 1, apertura=None, giornata: int = 3):
+    nomi = [f.squadra for p in partite for f in (p.casa, p.trasferta)]
+    return prompt.componi(partite, _tabella_semplice(nomi), giornata, "2026-27",
+                          "21 settembre 2026", "LA PROVA", memoria, seme, apertura=apertura)
+
+
+def test_partita_scelta_va_in_apertura() -> None:
+    """Qualunque partita si scelga, racconto e titolo sono suoi e le altre restano coperte."""
+    partite, nomi = _lega_grande()
+    for gara in partite:
+        pagina = _pagina_con(partite, apertura=gara, giornata=1)
+        casa, fuori = gara.casa.squadra, gara.trasferta.squadra
+        assert casa in pagina.racconto[0] and fuori in pagina.racconto[0], pagina.racconto[0]
+        assert pagina.apertura == f"{casa} {gara.risultato} {fuori}", pagina.apertura
+        assert pagina.apertura_scelta == casa, pagina.apertura_scelta
+        assert casa.upper() in pagina.titolo or fuori.upper() in pagina.titolo, pagina.titolo
+        assert len(pagina.trafiletti) == len(partite) - 1, f"{len(pagina.trafiletti)} trafiletti"
+        testo = " ".join(pagina.racconto) + " " + " ".join(f"{a} {b}" for a, b in pagina.trafiletti)
+        mancanti = [n for n in nomi if n.upper() not in testo.upper()]
+        assert not mancanti, f"con {casa} in apertura restano fuori: {mancanti}"
+    print(f"  ok  ognuna delle {len(partite)} partite, scelta, va in titolo e racconto; le altre nei trafiletti")
+
+
+def test_senza_scelta_la_pagina_decide_da_sola() -> None:
+    """Il comportamento di sempre, e i campi nuovi non finiscono nel prompt."""
+    partite, _ = _lega_grande()
+    pagina = _pagina_con(partite, giornata=1)
+    automatica = prompt.partita_di_apertura(partite)
+    assert pagina.apertura_scelta == ""
+    assert pagina.apertura.startswith(automatica.casa.squadra), pagina.apertura
+    assert [(v.casa, v.trasferta, v.risultato) for v in pagina.partite] == [
+        (p.casa.squadra, p.trasferta.squadra, p.risultato) for p in partite
+    ]
+    # L'elenco delle partite e la scelta servono all'interfaccia: il prompt che
+    # va al modello deve restare lo stesso, con o senza.
+    prima = prompt.renderizza(pagina)
+    pagina.partite, pagina.apertura_scelta = [], "Qualcuno"
+    assert prompt.renderizza(pagina) == prima, "i campi dell'interfaccia sono finiti nel prompt"
+    print("  ok  senza scelta decide la pagina; elenco e scelta non toccano il prompt")
+
+
+def _giornate_con_una_crisi() -> dict[int, list[Partita]]:
+    """Tre giornate: Beta perde sempre con Alfa, Gamma e Delta si alternano.
+
+    Una sola striscia da titolo - la crisi di Beta, con la serie di Alfa - e una
+    partita, Gamma-Delta, che con quella striscia non c'entra niente.
+    """
+    esiti = {1: ("1-1", 66.0, 66.5), 2: ("2-1", 72.0, 67.0), 3: ("0-1", 64.0, 71.0)}
+    return {
+        numero: [
+            Partita(casa=_formazione("Alfa", 76.0, marcatore=f"Punta{numero}", gol=2),
+                    trasferta=_formazione("Beta", 60.0), risultato="2-0"),
+            Partita(casa=_formazione("Gamma", gamma), trasferta=_formazione("Delta", delta),
+                    risultato=risultato),
+        ]
+        for numero, (risultato, gamma, delta) in esiti.items()
+    }
+
+
+def test_la_memoria_nel_titolo_della_partita_scelta() -> None:
+    """Una striscia entra nel titolo solo se è di chi gioca la partita scelta."""
+    giornate = _giornate_con_una_crisi()
+    memoria = tendenze.calcola(giornate)
+    partite = giornate[3]
+    alfa_beta, gamma_delta = partite
+
+    automatica = _pagina_con(partite, memoria)
+    assert "BETA" in automatica.titolo, automatica.titolo
+
+    neutra = _pagina_con(partite, memoria, apertura=gamma_delta)
+    assert "GAMMA" in neutra.titolo or "DELTA" in neutra.titolo, neutra.titolo
+    assert "BETA" not in neutra.titolo and "ALFA" not in neutra.titolo, neutra.titolo
+    assert not [r for r in neutra.richiami if r.sezione == "titolo"], "titolo attribuito alla memoria"
+
+    for seme in range(8):
+        crisi = _pagina_con(partite, memoria, seme=seme, apertura=alfa_beta)
+        # Alfa è in serie e Beta in crisi: vale la stessa precedenza del titolo
+        # automatico, prima la crisi.
+        assert "BETA" in crisi.titolo, crisi.titolo
+        tracce = [r for r in crisi.richiami if r.sezione == "titolo"]
+        assert [(r.tipo, r.squadra, r.valore) for r in tracce] == [("sconfitte", "Beta", 3)], tracce
+        assert tracce[0].titolo == crisi.titolo and tracce[0].testo == crisi.sottotitolo
+    print("  ok  la striscia di chi gioca finisce nel titolo, con la sua traccia; quella di altri no")
+
+
+def test_titoli_della_partita_per_ogni_esito() -> None:
+    """Pareggio, dominio, vittoria sul filo, in casa, in trasferta: sempre più di una formula."""
+    def squadra(nome: str, totale: float) -> Formazione:
+        return Formazione(squadra=nome, modulo=433, totale=totale)
+
+    casi = {
+        "pareggio": Partita(squadra("Pari Uno", 68.0), squadra("Pari Due", 67.0), "1-1"),
+        "dominio": Partita(squadra("Forte", 85.0), squadra("Debole", 62.0), "3-0"),
+        "sul filo": Partita(squadra("Vince Poco", 68.0), squadra("Perde Poco", 66.0), "1-0"),
+        "in casa": Partita(squadra("Padroni", 74.0), squadra("Ospiti", 66.0), "2-1"),
+        "in trasferta": Partita(squadra("Casalinghi", 63.0), squadra("Corsari", 72.0), "0-2"),
+        "zero a zero": Partita(squadra("Muro A", 60.0), squadra("Muro B", 61.0), "0-0"),
+    }
+    # "un 1-0" è giusto; sbagliati sono "il 1-0", "sul 0-0", "un 0-0" e i doppi punti.
+    sbagliati = re.compile(r"\b(il|sul) (0|1|8|11)-|\bun 0-|\.\.", re.I)
+    for nome, gara in casi.items():
+        titoli = set()
+        for seme in range(12):
+            principale, sottotitolo = prompt._titolo_partita(gara, None, seme)
+            titoli.add(principale)
+            squadre = (gara.casa.squadra.upper(), gara.trasferta.squadra.upper())
+            assert any(s in principale for s in squadre), f"{nome}: {principale}"
+            assert principale == principale.upper(), f"{nome}: titolo non in maiuscolo"
+            assert sottotitolo and sottotitolo[0].isupper(), f"{nome}: {sottotitolo!r}"
+            assert not sbagliati.search(sottotitolo), f"{nome}: {sottotitolo}"
+        # "Scrivila diversamente" riprova finché il titolo cambia: con una
+        # formula sola girerebbe a vuoto.
+        assert len(titoli) > 1, f"{nome}: un solo titolo su 12 semi"
+    print(f"  ok  {len(casi)} esiti, ciascuno con più formule e punteggi con l'articolo giusto")
+
+
+def test_trova_partita_da_una_delle_due_squadre() -> None:
+    partite, _ = _lega_grande()
+    terza = partite[2]
+    assert prompt.trova_partita(partite, terza.casa.squadra) is terza
+    assert prompt.trova_partita(partite, terza.trasferta.squadra) is terza
+    assert prompt.trova_partita(partite, f"  {terza.trasferta.squadra.upper()} ") is terza
+    assert prompt.trova_partita(partite, "Nessuno FC") is None
+    assert prompt.trova_partita(partite, "   ") is None
+    print("  ok  la partita si trova da casa o trasferta, senza badare a maiuscole e spazi")
+
+
+def test_partita_di_un_altra_giornata_rifiutata() -> None:
+    partite, _ = _lega_grande()
+    estranea, _ = _lega_grande()  # stesse squadre, ma oggetti di un'altra giornata
+    try:
+        _pagina_con(partite, apertura=estranea[0], giornata=1)
+    except ValueError:
+        print("  ok  una partita che non è della giornata viene rifiutata")
+        return
+    raise AssertionError("una partita estranea è finita in apertura")
+
+
+def test_generazione_con_partita_scelta() -> None:
+    """Dal servizio: la squadra si trova, e una squadra inesistente elenca le partite vere."""
+    from datetime import date
+
+    from fantamagazine import auth, servizio
+    from test_accesso import _cartella, _errore
+    from test_listone import _cache, _servizio_finto
+
+    with _cartella(), _cache(), _servizio_finto():
+        auth.salva_leghe([{"alias": "mia-lega", "nome": "Mia Lega", "token": "eyJ.finto"}])
+        risultato = servizio.genera("mia-lega", "1", oggi=date(2026, 9, 16), apertura=" ospiti fc ")
+        assert risultato.pagina.apertura_scelta == "Casa FC", risultato.pagina.apertura_scelta
+        assert "CASA FC" in risultato.pagina.titolo or "OSPITI FC" in risultato.pagina.titolo
+
+        errore = _errore(lambda: servizio.genera("mia-lega", "1", oggi=date(2026, 9, 16),
+                                                 apertura="Nessuno"))
+        assert errore.codice == "partita_sconosciuta" and errore.stato_http == 404, errore.codice
+        assert "Casa FC - Ospiti FC" in errore.messaggio, errore.messaggio
+    print("  ok  il servizio trova la partita dalla squadra, e se non c'è elenca quelle giocate")
 
 
 def main_test() -> int:

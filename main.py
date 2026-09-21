@@ -11,6 +11,7 @@ diagnostica passano da stderr.
     python main.py > prompt.txt             # il menu resta visibile a schermo
     python main.py --verbose                # diagnostica su stderr
     python main.py --giornata 3             # forza una giornata specifica
+    python main.py --apertura "Bar Sport"   # quella partita in prima pagina
     python main.py --varia                  # riformula a ogni esecuzione
     python main.py --memoria                # mostra cosa ricorda e cosa usa in pagina
     python main.py --immagine               # genera anche l'immagine con Gemini
@@ -328,6 +329,7 @@ def _esegui(argomenti: argparse.Namespace) -> int:
         varia=argomenti.varia,
         usa_cache=not argomenti.no_cache,
         su_log=log,
+        apertura=argomenti.apertura,
     )
     # Gli avvisi di validazione si mostrano sempre, anche senza --verbose.
     if not loud:
@@ -385,6 +387,11 @@ def main() -> int:
     parser.add_argument("--competizione", help="Id della competizione (salta la domanda)")
     parser.add_argument("--lista", action="store_true", help="Elenca leghe e competizioni")
     parser.add_argument("--giornata", type=int, help="Analizza questa giornata invece dell'ultima")
+    parser.add_argument(
+        "--apertura",
+        metavar="SQUADRA",
+        help="Mette in prima pagina la partita di questa squadra, in casa o fuori",
+    )
     parser.add_argument("--verbose", action="store_true", help="Diagnostica su stderr")
     parser.add_argument(
         "--varia",

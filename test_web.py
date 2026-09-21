@@ -195,13 +195,52 @@ def test_genera_passa_i_parametri() -> None:
     dati = risposta.get_json()
     assert ricevuti == {
         "alias": "tana", "competizione": "12200", "giornata": 2,
-        "seme": None, "varia": True, "usa_cache": True,
+        "seme": None, "varia": True, "usa_cache": True, "apertura": None,
     }, ricevuti
     assert dati["prompt"] == "PROMPT"
     assert dati["pagina"]["classifica"][0]["fantapunti"] == 70.5
     assert dati["pagina"]["trafiletti"] == [["TITOLETTO", "Testo breve."]]
     assert dati["avvisi"] == ["attenzione"]
     print("  ok  genera converte i parametri e restituisce pagina e prompt")
+
+
+def test_genera_passa_la_partita_in_apertura() -> None:
+    """Il nome di una squadra arriva ripulito; tutto il resto viene rifiutato prima."""
+    ricevuti = []
+
+    def finto(alias, competizione, **opzioni):
+        ricevuti.append(opzioni.get("apertura"))
+        return servizio.Risultato(
+            prompt="PROMPT", pagina=_pagina_finta(), lega=alias, nome_lega="Tana",
+            competizione=competizione, nome_competizione="Campionato",
+        )
+
+    base = {"lega": "tana", "competizione": 12200}
+    with _sostituisci(servizio, genera=finto):
+        client = _client()
+        for valore, atteso in ((" Bar Sport ", "Bar Sport"), ("", None), ("   ", None), (None, None)):
+            risposta = client.post("/api/genera", json={**base, "apertura": valore})
+            assert risposta.status_code == 200, risposta.get_data(as_text=True)
+            assert ricevuti[-1] == atteso, (valore, ricevuti[-1])
+
+        chiamate = len(ricevuti)
+        for storto in (42, ["Bar Sport"], {"casa": "Bar"}, "x" * 201):
+            risposta = client.post("/api/genera", json={**base, "apertura": storto})
+            assert risposta.status_code == 400, (storto, risposta.status_code)
+            assert risposta.get_json()["codice"] == "parametri"
+        assert len(ricevuti) == chiamate, "una richiesta storta è arrivata al servizio"
+
+    def sconosciuta(*_argomenti, **_opzioni):
+        raise servizio.ErroreServizio("Nella giornata 3 nessuna partita di «Nessuno».", "partita_sconosciuta")
+
+    with _sostituisci(servizio, genera=sconosciuta):
+        risposta = _client().post("/api/genera", json={**base, "apertura": "Nessuno"})
+    assert risposta.status_code == 404, risposta.status_code
+    assert risposta.get_json()["codice"] == "partita_sconosciuta"
+
+    pagina = _client().get("/").get_data(as_text=True)
+    assert 'id="apertura"' in pagina, "il menu della partita manca dalla pagina"
+    print("  ok  apertura ripulita e passata al servizio; tipi storti 400, squadra ignota 404")
 
 
 def test_genera_restituisce_la_memoria() -> None:

@@ -36,7 +36,7 @@ from dataclasses import dataclass, field
 from typing import Callable, Sequence
 
 from .analysis import Formazione, Partita, RigaClassifica
-from .tendenze import SOGLIA_DIGIUNO, SOGLIA_STRISCIA, Memoria
+from .tendenze import SOGLIA_DIGIUNO, SOGLIA_STRISCIA, Memoria, StoricoSquadra
 
 # Un commento è una terna: titoletto, testo, chiavi citate (per la deduplica).
 Commento = tuple[str, str, frozenset]
@@ -196,6 +196,185 @@ def _marcatori_con_gol(formazione: Formazione) -> list[str]:
 
 
 # --- Titolo -----------------------------------------------------------------
+def _titolo_crisi(
+    peggiore: StoricoSquadra, seme: int, richiami: list[Richiamo] | None = None
+) -> tuple[str, str]:
+    """Il titolo di una striscia di sconfitte, con la sua traccia in memoria."""
+    nome = peggiore.nome.upper()
+    ordinale = _ordinale(peggiore.striscia_sconfitte)
+    principale, sottotitolo = _formule(
+        seme,
+        (
+            f"{nome} NON SI RIALZA",
+            f"{ordinale.capitalize()} sconfitta consecutiva: la crisi non "
+            f"accenna a fermarsi",
+        ),
+        (
+            f"NOTTE FONDA PER {nome}",
+            f"{ordinale.capitalize()} sconfitta di fila, e la risalita sembra "
+            f"lontana",
+        ),
+        (
+            f"{nome}, CRISI SENZA FINE",
+            f"Arriva la {ordinale} sconfitta consecutiva: serve una svolta",
+        ),
+        (
+            f"{nome} AFFONDA ANCORA",
+            f"{ordinale.capitalize()} sconfitta di fila: la classifica si fa "
+            f"pesante",
+        ),
+    )
+    if richiami is not None:
+        richiami.append(
+            Richiamo("titolo", "sconfitte", peggiore.nome,
+                     peggiore.striscia_sconfitte, principale, sottotitolo)
+        )
+    return principale, sottotitolo
+
+
+def _titolo_serie(
+    migliore: StoricoSquadra, seme: int, richiami: list[Richiamo] | None = None
+) -> tuple[str, str]:
+    """Il titolo di una striscia di vittorie, con la sua traccia in memoria."""
+    nome = migliore.nome.upper()
+    ordinale = _ordinale(migliore.striscia_vittorie)
+    principale, sottotitolo = _formule(
+        seme,
+        (
+            f"{nome} NON SI FERMA PIÙ",
+            f"{ordinale.capitalize()} vittoria di fila, e la classifica sorride",
+        ),
+        (
+            f"{nome} VOLA",
+            f"{ordinale.capitalize()} vittoria consecutiva: nessuno sembra in "
+            f"grado di fermarla",
+        ),
+        (
+            f"INARRESTABILE {nome}",
+            f"Con la {ordinale} vittoria di fila allunga il passo",
+        ),
+        (
+            f"{nome}, CHE MARCIA",
+            f"{ordinale.capitalize()} vittoria consecutiva: ritmo da grande",
+        ),
+    )
+    if richiami is not None:
+        richiami.append(
+            Richiamo("titolo", "vittorie", migliore.nome,
+                     migliore.striscia_vittorie, principale, sottotitolo)
+        )
+    return principale, sottotitolo
+
+
+def _titolo_partita(
+    partita: Partita,
+    memoria: Memoria | None = None,
+    seme: int = 0,
+    richiami: list[Richiamo] | None = None,
+) -> tuple[str, str]:
+    """Il titolo quando la partita d'apertura l'ha scelta chi usa l'app.
+
+    Il titolo deve parlare di quella partita, non della giornata. Se una delle
+    due squadre ha una striscia da prima pagina la si racconta, perche' questa
+    partita e' l'ultimo anello della striscia; con le stesse soglie e la stessa
+    precedenza del titolo automatico: prima la crisi, poi la serie positiva.
+    Una striscia di chi non gioca questa partita resta fuori: la scelta di chi
+    usa l'app viene prima.
+
+    Altrimenti il titolo nasce dalla partita stessa, con le stesse soglie del
+    racconto (pareggio, dominio, vittoria sul filo, in casa, in trasferta) ma
+    con verbi diversi, cosi' titolo e attacco del pezzo non ripetono la stessa
+    parola a tre righe di distanza. Ogni caso ha piu' formule: "Scrivila
+    diversamente" deve poter cambiare anche il titolo.
+    """
+    if memoria and memoria.abbastanza_storia:
+        schede = [
+            scheda
+            for scheda in (memoria.squadre.get(f.squadra) for f in (partita.casa, partita.trasferta))
+            if scheda
+        ]
+        crisi = max(
+            (s for s in schede if s.striscia_sconfitte >= SOGLIA_TITOLO),
+            key=lambda s: s.striscia_sconfitte,
+            default=None,
+        )
+        if crisi:
+            return _titolo_crisi(crisi, seme, richiami)
+        serie = max(
+            (s for s in schede if s.striscia_vittorie >= SOGLIA_TITOLO),
+            key=lambda s: s.striscia_vittorie,
+            default=None,
+        )
+        if serie:
+            return _titolo_serie(serie, seme, richiami)
+
+    casa, trasferta = partita.casa, partita.trasferta
+    risultato = partita.risultato
+
+    if partita.gol_casa == partita.gol_trasferta:
+        a, b = casa.squadra.upper(), trasferta.squadra.upper()
+        return _formule(
+            seme,
+            (f"PARI TRA {a} E {b}", f"Finisce {risultato}: un punto per parte"),
+            (
+                f"{a} E {b} NON SI FANNO MALE",
+                f"{_maiuscola(_col_articolo(risultato))} non premia nessuno",
+            ),
+            (
+                f"{a} E {b}, TUTTO IN EQUILIBRIO",
+                f"La sfida si chiude {_col_articolo(risultato, 'su')}, senza padroni",
+            ),
+        )
+
+    vincente = casa if partita.gol_casa > partita.gol_trasferta else trasferta
+    perdente = trasferta if vincente is casa else casa
+    v, p = vincente.squadra.upper(), perdente.squadra.upper()
+    scarto = round(abs(casa.totale - trasferta.totale), 1)
+
+    if scarto >= 15:
+        return _formule(
+            seme,
+            (f"{v} DILAGA CONTRO {p}", f"Finisce {risultato}, con {_fantapunti(scarto)} di margine"),
+            (
+                f"{v} NON FA SCONTI A {p}",
+                f"{_maiuscola(_col_articolo(risultato))} chiude una partita mai in discussione",
+            ),
+            (f"{v} SCHIACCIA {p}", f"Vittoria per {risultato} e {_fantapunti(scarto)} di vantaggio"),
+        )
+
+    if scarto <= 3:
+        return _formule(
+            seme,
+            (f"{v}, VITTORIA SUL FILO", f"Finisce {risultato}: a decidere sono pochi decimi"),
+            (
+                f"{v} VINCE DI MISURA",
+                f"Contro {perdente.squadra} basta {_un_risultato(risultato)} costruito sui decimali",
+            ),
+            (f"{v} DI UN SOFFIO SU {p}", f"{_maiuscola(_col_articolo(risultato))} arriva allo sprint"),
+        )
+
+    if vincente is casa:
+        return _formule(
+            seme,
+            (f"{v} PIEGA {p}", f"Il fattore campo pesa: finisce {risultato}"),
+            (
+                f"{v} FA SUA LA SFIDA CON {p}",
+                f"{_maiuscola(_col_articolo(risultato))} e tre punti davanti al proprio pubblico",
+            ),
+            (f"{v} BATTE {p}", f"Finisce {risultato}, e i tre punti restano in casa"),
+        )
+
+    return _formule(
+        seme,
+        (f"COLPO DI {v} IN CASA DI {p}", f"Finisce {risultato}: tre punti pesanti in trasferta"),
+        (f"BLITZ DI {v} CONTRO {p}", f"Vittoria esterna per {risultato}"),
+        (
+            f"{v} SBANCA IL CAMPO DI {p}",
+            f"{_maiuscola(_col_articolo(risultato))} in trasferta vale tre punti",
+        ),
+    )
+
+
 def _titolo_completo(
     partite: list[Partita],
     memoria: Memoria | None = None,
@@ -211,69 +390,13 @@ def _titolo_completo(
     if memoria and memoria.abbastanza_storia:
         crisi = memoria.in_crisi()
         if crisi and crisi[0].striscia_sconfitte >= SOGLIA_TITOLO:
-            peggiore = crisi[0]
-            nome = peggiore.nome.upper()
-            ordinale = _ordinale(peggiore.striscia_sconfitte)
-            principale, sottotitolo = _formule(
-                seme,
-                (
-                    f"{nome} NON SI RIALZA",
-                    f"{ordinale.capitalize()} sconfitta consecutiva: la crisi non "
-                    f"accenna a fermarsi",
-                ),
-                (
-                    f"NOTTE FONDA PER {nome}",
-                    f"{ordinale.capitalize()} sconfitta di fila, e la risalita sembra "
-                    f"lontana",
-                ),
-                (
-                    f"{nome}, CRISI SENZA FINE",
-                    f"Arriva la {ordinale} sconfitta consecutiva: serve una svolta",
-                ),
-                (
-                    f"{nome} AFFONDA ANCORA",
-                    f"{ordinale.capitalize()} sconfitta di fila: la classifica si fa "
-                    f"pesante",
-                ),
-            )
-            if richiami is not None:
-                richiami.append(
-                    Richiamo("titolo", "sconfitte", peggiore.nome,
-                             peggiore.striscia_sconfitte, principale, sottotitolo)
-                )
-            return (principale, sottotitolo, frozenset({peggiore.nome}))
+            principale, sottotitolo = _titolo_crisi(crisi[0], seme, richiami)
+            return (principale, sottotitolo, frozenset({crisi[0].nome}))
 
         serie = memoria.in_serie_positiva()
         if serie and serie[0].striscia_vittorie >= SOGLIA_TITOLO:
-            migliore = serie[0]
-            nome = migliore.nome.upper()
-            ordinale = _ordinale(migliore.striscia_vittorie)
-            principale, sottotitolo = _formule(
-                seme,
-                (
-                    f"{nome} NON SI FERMA PIÙ",
-                    f"{ordinale.capitalize()} vittoria di fila, e la classifica sorride",
-                ),
-                (
-                    f"{nome} VOLA",
-                    f"{ordinale.capitalize()} vittoria consecutiva: nessuno sembra in "
-                    f"grado di fermarla",
-                ),
-                (
-                    f"INARRESTABILE {nome}",
-                    f"Con la {ordinale} vittoria di fila allunga il passo",
-                ),
-                (
-                    f"{nome}, CHE MARCIA",
-                    f"{ordinale.capitalize()} vittoria consecutiva: ritmo da grande",
-                ),
-            )
-            if richiami is not None:
-                richiami.append(
-                    Richiamo("titolo", "vittorie", migliore.nome,
-                             migliore.striscia_vittorie, principale, sottotitolo)
-                )
-            return (principale, sottotitolo, frozenset({migliore.nome}))
+            principale, sottotitolo = _titolo_serie(serie[0], seme, richiami)
+            return (principale, sottotitolo, frozenset({serie[0].nome}))
 
     trasferta = sum(1 for p in partite if p.gol_trasferta > p.gol_casa)
     casa = sum(1 for p in partite if p.gol_casa > p.gol_trasferta)
@@ -637,34 +760,51 @@ def racconto(
     seme: int = 0,
     soggetti: set[str] | None = None,
     richiami: list[Richiamo] | None = None,
+    apertura: Partita | None = None,
 ) -> list[str]:
-    """Il pezzo di apertura: la partita del giorno per esteso, poi la seconda.
+    """Il pezzo di apertura: la partita del giorno per esteso.
 
     Passando `soggetti` si ottiene l'elenco di squadre e giocatori nominati,
-    che il resto della pagina userà per non ripetersi.
+    che il resto della pagina userà per non ripetersi. `apertura` impone la
+    partita; senza, è quella con l'evento più rilevante del turno.
     """
     if not partite:
         return []
-    ordinate = sorted(partite, key=_interesse, reverse=True)
-    # Una sola partita in apertura: quella con l'evento più rilevante del
-    # turno. Le altre hanno il loro trafiletto, così le cinque gare sono
-    # coperte una volta sola ciascuna.
-    return [
-        _paragrafo(ordinate[0], memoria, seme, disteso=True, soggetti=soggetti, richiami=richiami)
-    ]
+    # Una sola partita in apertura. Le altre hanno il loro trafiletto, così le
+    # cinque gare sono coperte una volta sola ciascuna.
+    gara = apertura if apertura is not None else partita_di_apertura(partite)
+    return [_paragrafo(gara, memoria, seme, disteso=True, soggetti=soggetti, richiami=richiami)]
 
 
 def partita_di_apertura(partite: list[Partita]) -> Partita | None:
-    """La gara che finisce nel pezzo di apertura."""
+    """La gara che finisce nel pezzo di apertura quando nessuno la sceglie."""
     if not partite:
         return None
     return max(partite, key=_interesse)
 
 
-def partite_minori(partite: list[Partita]) -> list[Partita]:
+def partite_minori(partite: list[Partita], apertura: Partita | None = None) -> list[Partita]:
     """Tutte le altre, nell'ordine di calendario: una per trafiletto."""
-    apertura = partita_di_apertura(partite)
+    if apertura is None:
+        apertura = partita_di_apertura(partite)
     return [p for p in partite if p is not apertura]
+
+
+def trova_partita(partite: list[Partita], squadra: str) -> Partita | None:
+    """La partita giocata da `squadra` in questa giornata, in casa o fuori.
+
+    Negli scontri diretti ogni squadra gioca una partita sola per giornata, e
+    il suo nome la identifica senza ambiguità: da riga di comando basta
+    scrivere una delle due squadre, senza sapere chi giocava in casa. Maiuscole
+    e spazi ai lati non contano.
+    """
+    cercata = squadra.strip().casefold()
+    if not cercata:
+        return None
+    for partita in partite:
+        if cercata in (partita.casa.squadra.strip().casefold(), partita.trasferta.squadra.strip().casefold()):
+            return partita
+    return None
 
 
 # --- Il pezzo di raccordo ----------------------------------------------------
@@ -1447,6 +1587,15 @@ class VoceClassifica:
 
 
 @dataclass
+class VocePartita:
+    """Una partita della giornata, per chi deve sceglierne una da mettere in apertura."""
+
+    casa: str
+    trasferta: str
+    risultato: str
+
+
+@dataclass
 class PrimaPagina:
     """La prima pagina come dati, prima di diventare testo.
 
@@ -1471,6 +1620,11 @@ class PrimaPagina:
     # I punti che la pagina deve alla memoria, nell'ordine in cui si leggono.
     # Il prompt non li usa: servono a chi vuole verificare che la storia pesi.
     richiami: list[Richiamo] = field(default_factory=list)
+    # Le partite della giornata, per poterne scegliere una da mettere in
+    # apertura, e la squadra di casa di quella scelta ("" se l'ha decisa la
+    # pagina). Nemmeno questi finiscono nel prompt.
+    partite: list[VocePartita] = field(default_factory=list)
+    apertura_scelta: str = ""
 
 
 _NUMERI = {
@@ -1496,12 +1650,18 @@ def componi(
     testata: str,
     memoria: Memoria | None = None,
     seme: int | None = None,
+    apertura: Partita | None = None,
 ) -> PrimaPagina:
     """Decide il contenuto della pagina.
 
     Impianto: una partita in apertura, le altre una per trafiletto. Così ogni
     gara è coperta una volta sola, e nessuna squadra viene raccontata due volte
     con parole diverse.
+
+    `apertura` mette in prima pagina una partita scelta da chi usa l'app: la
+    racconta il pezzo d'apertura e ne parla il titolo. Senza, la pagina sceglie
+    da sola - la partita più ricca di eventi per il racconto, il fatto più
+    rilevante della giornata per il titolo - come ha sempre fatto.
 
     `seme` decide quali formule vengono scelte. Per difetto è il numero di
     giornata: la stessa giornata rigenera sempre la stessa pagina, che rende il
@@ -1510,16 +1670,21 @@ def componi(
     """
     if seme is None:
         seme = giornata
+    if apertura is not None and not any(p is apertura for p in partite):
+        raise ValueError("La partita in apertura non è fra quelle della giornata.")
     # Ogni sezione annota qui ciò che deve alla memoria. Le sezioni si compongono
     # nell'ordine di lettura, così i richiami seguono la pagina.
     richiami: list[Richiamo] = []
-    principale, sottotitolo, _ = _titolo_completo(partite, memoria, seme, richiami)
+    if apertura is not None:
+        principale, sottotitolo = _titolo_partita(apertura, memoria, seme, richiami)
+    else:
+        principale, sottotitolo, _ = _titolo_completo(partite, memoria, seme, richiami)
     posizioni = {riga.squadra: indice for indice, riga in enumerate(tabella, 1)}
-    gara_apertura = partita_di_apertura(partite)
-    paragrafi = racconto(partite, memoria, seme, richiami=richiami)
+    gara_apertura = apertura if apertura is not None else partita_di_apertura(partite)
+    paragrafi = racconto(partite, memoria, seme, richiami=richiami, apertura=gara_apertura)
     pezzo_lungo = dietro_i_numeri(tabella, memoria, seme, richiami=richiami)
     brevi = trafiletti(
-        partite_minori(partite),
+        partite_minori(partite, gara_apertura),
         memoria,
         posizioni,
         seme,
@@ -1554,6 +1719,11 @@ def componi(
         pezzo_lungo=pezzo_lungo,
         trafiletti=brevi,
         richiami=richiami,
+        partite=[
+            VocePartita(casa=p.casa.squadra, trasferta=p.trasferta.squadra, risultato=p.risultato)
+            for p in partite
+        ],
+        apertura_scelta=apertura.casa.squadra if apertura is not None else "",
     )
 
 
@@ -1629,8 +1799,9 @@ def costruisci(
     testata: str,
     memoria: Memoria | None = None,
     seme: int | None = None,
+    apertura: Partita | None = None,
 ) -> str:
     """Il prompt completo della prima pagina, in un passo solo."""
     return renderizza(
-        componi(partite, tabella, giornata, stagione, data, testata, memoria, seme)
+        componi(partite, tabella, giornata, stagione, data, testata, memoria, seme, apertura)
     )

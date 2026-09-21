@@ -158,6 +158,14 @@ def crea_app() -> Flask:
         except ValueError as errore:
             return _errore(str(errore), "parametri", 400)
 
+        # La partita in apertura: il nome di una delle sue squadre, o niente per
+        # lasciarla scegliere alla pagina.
+        apertura = dati.get("apertura")
+        if apertura is not None and not isinstance(apertura, str):
+            return _errore("La partita in apertura deve essere il nome di una squadra.", "parametri", 400)
+        if apertura is not None and len(apertura) > 200:
+            return _errore("Nome di squadra troppo lungo.", "parametri", 400)
+
         risultato = servizio.genera(
             lega,
             competizione,
@@ -165,6 +173,7 @@ def crea_app() -> Flask:
             seme=seme,
             varia=bool(dati.get("varia")),
             usa_cache=dati.get("usa_cache", True) is not False,
+            apertura=(apertura or "").strip() or None,
         )
         return jsonify(
             {

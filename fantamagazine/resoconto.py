@@ -29,7 +29,9 @@ REGOLE = (
         "Titolo",
         f"la crisi più lunga, da almeno {SOGLIA_TITOLO} sconfitte di fila; se non c'è, "
         f"la serie positiva più lunga, da almeno {SOGLIA_TITOLO} vittorie. "
-        "Altrimenti il titolo racconta la giornata.",
+        "Altrimenti il titolo racconta la giornata. Se la partita in apertura l'hai "
+        "scelta tu, contano solo le serie delle sue due squadre, e senza serie il "
+        "titolo racconta quella partita.",
     ),
     (
         "Il racconto",

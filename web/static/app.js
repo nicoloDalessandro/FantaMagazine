@@ -16,6 +16,8 @@
     competizione: $("competizione"),
     notaCompetizione: $("nota-competizione"),
     giornata: $("giornata"),
+    apertura: $("apertura"),
+    notaApertura: $("nota-apertura"),
     seme: $("seme"),
     notaScrittura: $("nota-scrittura"),
     genera: $("genera"),
@@ -223,6 +225,8 @@
     nodi.copia.disabled = stato.occupato;
     nodi.svuotaCache.disabled = stato.occupato;
     nodi.aggiornaListone.disabled = stato.occupato || !legaCorrente();
+    // Solo "automatica" vuol dire che le partite non si conoscono ancora.
+    nodi.apertura.disabled = stato.occupato || nodi.apertura.options.length < 2;
     for (const pulsante of [nodi.entra, nodi.accessoChrome, nodi.apriLeghe, nodi.esci,
                             nodi.aggiornaLeghe, nodi.annullaLeghe, nodi.apriImpostazioni,
                             nodi.salvaApp, nodi.chiudiApp, nodi.rimuoviChiave]) {
@@ -280,6 +284,7 @@
       nodi.competizione.disabled = true;
       nodi.giornata.replaceChildren();
       nodi.giornata.disabled = true;
+      azzeraApertura();
       if (problemaDiToken(errore.codice)) {
         mostraSchermata("accesso");
         mostraErroreAccesso(errore.message);
@@ -392,6 +397,7 @@
   function disegnaGiornate() {
     const competizione = competizioneCorrente();
     nodi.giornata.replaceChildren();
+    azzeraApertura();
 
     if (!competizione) {
       nodi.giornata.disabled = true;
@@ -419,6 +425,33 @@
       scritturaScelta() === "varia"
         ? "Ogni generazione racconta le stesse notizie con parole diverse."
         : "Rigenerare la stessa giornata dà lo stesso testo.";
+  }
+
+  // --- Partita in apertura ---------------------------------------------------
+  // Le partite di una giornata si conoscono solo dopo averla generata: il menu
+  // si riempie con la pagina e si svuota appena cambiano lega, competizione o
+  // giornata, così non può mai proporre una partita di un'altra giornata.
+  const APERTURA_AUTOMATICA = "Automatica: la più ricca di eventi";
+
+  function azzeraApertura() {
+    nodi.apertura.replaceChildren(el("option", { attributi: { value: "" } }, APERTURA_AUTOMATICA));
+    nodi.apertura.disabled = true;
+    nodi.notaApertura.textContent =
+      "Genera la pagina: poi potrai scegliere quale partita mettere in prima pagina.";
+  }
+
+  function riempiApertura(pagina) {
+    const partite = pagina.partite || [];
+    nodi.apertura.replaceChildren(
+      el("option", { attributi: { value: "" } }, APERTURA_AUTOMATICA),
+      ...partite.map((p) =>
+        el("option", { attributi: { value: p.casa } }, `${p.casa} ${p.risultato} ${p.trasferta}`),
+      ),
+    );
+    nodi.apertura.value = pagina.apertura_scelta || "";
+    nodi.notaApertura.textContent = pagina.apertura_scelta
+      ? "La partita scelta è nel titolo e nel racconto."
+      : "Scegli una partita per metterla nel titolo e nel racconto.";
   }
 
   // --- Generazione -----------------------------------------------------------
@@ -474,6 +507,7 @@
       giornata: nodi.giornata.value || null,
       varia: nuovaVersione || scritturaScelta() === "varia",
     };
+    if (nodi.apertura.value) corpo.apertura = nodi.apertura.value;
 
     const semeScritto = nodi.seme.value.trim();
     if (semeScritto !== "" && !nuovaVersione) {
@@ -512,11 +546,13 @@
       }
       stato.risultato = dati;
       azzeraImmagine();
+      riempiApertura(dati.pagina);
       disegnaGiornale(dati.pagina);
       disegnaMemoria(dati.memoria, dati.pagina.richiami || []);
       nodi.prompt.textContent = dati.prompt;
       nodi.dettagliEsito.textContent =
-        `${dati.nome_lega} · ${dati.nome_competizione} · giornata ${dati.pagina.giornata} · seme ${dati.pagina.seme}`;
+        `${dati.nome_lega} · ${dati.nome_competizione} · giornata ${dati.pagina.giornata} · seme ${dati.pagina.seme}` +
+        (dati.pagina.apertura_scelta ? " · apertura scelta" : "");
 
       if (dati.avvisi.length) {
         nodi.avvisi.replaceChildren(...dati.avvisi.map((a) => el("li", {}, a)));
@@ -1361,6 +1397,7 @@
     nodi.competizione.disabled = true;
     nodi.giornata.replaceChildren();
     nodi.giornata.disabled = true;
+    azzeraApertura();
     nodi.esito.hidden = true;
     nodi.avvisi.hidden = true;
     mostraStato("vuoto");
@@ -1582,6 +1619,13 @@
       preferenze.scrivi(`competizione.${stato.lega}`, nodi.competizione.value);
       disegnaGiornate();
     });
+    nodi.giornata.addEventListener("change", () => {
+      azzeraApertura();
+      aggiornaControlli();
+    });
+    // Scegliere la partita è un ritocco della pagina già a schermo: la si
+    // rigenera subito, senza dover cercare il pulsante.
+    nodi.apertura.addEventListener("change", () => genera());
     for (const scelta of document.querySelectorAll('input[name="scrittura"]')) {
       scelta.addEventListener("change", aggiornaNotaScrittura);
     }

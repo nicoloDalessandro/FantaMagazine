@@ -70,6 +70,7 @@ class ErroreServizio(Exception):
         "lega_sconosciuta": 404,
         "competizione_sconosciuta": 404,
         "giornata_non_disponibile": 404,
+        "partita_sconosciuta": 404,
         "nessuna_competizione": 409,
         "nessuna_giornata": 409,
         "formato_non_supportato": 422,
@@ -290,12 +291,17 @@ def genera(
     usa_cache: bool = True,
     oggi: date | None = None,
     su_log: Log | None = None,
+    apertura: str | None = None,
 ) -> Risultato:
     """Genera la prima pagina di una giornata. Solleva ErroreServizio.
 
     Senza `giornata` si usa l'ultima disputata. `seme` fissa le formule; con
     `varia` se ne sceglie uno a caso. Senza nessuno dei due il testo dipende
     solo dalla giornata, quindi rigenerarla dà lo stesso prompt.
+
+    `apertura` è il nome di una delle due squadre di una partita della
+    giornata: quella partita va in prima pagina, nel titolo e nel racconto.
+    Senza, la pagina la sceglie da sola.
     """
     log = su_log or (lambda _messaggio: None)
     avvisi: list[str] = []
@@ -422,8 +428,21 @@ def genera(
     if seme is not None:
         log(f"seme: {seme}")
 
+    partite = completo[fino_a]
+    gara = None
+    if apertura:
+        gara = prompt.trova_partita(partite, apertura)
+        if gara is None:
+            elenco = "; ".join(f"{p.casa.squadra} - {p.trasferta.squadra}" for p in partite)
+            raise ErroreServizio(
+                f"Nella giornata {fino_a} nessuna partita di «{apertura}». "
+                f"Le partite sono: {elenco}.",
+                "partita_sconosciuta",
+            )
+        log(f"apertura scelta: {gara.casa.squadra} - {gara.trasferta.squadra}")
+
     pagina = prompt.componi(
-        partite=completo[fino_a],
+        partite=partite,
         tabella=tabella,
         giornata=fino_a,
         stagione=stagione(oggi),
@@ -431,6 +450,7 @@ def genera(
         testata=testata,
         memoria=memoria,
         seme=seme,
+        apertura=gara,
     )
     return Risultato(
         prompt=prompt.renderizza(pagina),
